@@ -1,0 +1,60 @@
+import pytest
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.db.base import Base, SessionLocal, engine
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _create_schema():
+    """
+    Uses the same Postgres instance as the app (DATABASE_URL from .env)
+    — these are real integration tests against a real database, not
+    sqlite-in-memory approximations. Tables are created once per test
+    session and torn down after.
+
+    SAFETY GUARDRAIL: this fixture DROPS every table at teardown. Running
+    it against a real dev/prod database is a real, recoverable-only-by-
+    rerunning-migrations mistake — it happened twice already. Refuse to
+    even start unless the database name makes it obvious this is a
+    throwaway test database, rather than trusting every future `pytest`
+    invocation to remember a special env var.
+    """
+    db_url = get_settings().DATABASE_URL
+    db_name = db_url.rsplit("/", 1)[-1]
+    if "test" not in db_name.lower():
+        pytest.exit(
+            f"\n\nREFUSING TO RUN: DATABASE_URL points at '{db_name}', which doesn't look like a "
+            f"test database (expected something with 'test' in the name, e.g. 'atla_test').\n"
+            f"This test suite DROPS ALL TABLES at the end of the run — running it against your "
+            f"real dev database will wipe it.\n\n"
+            f"Fix: createdb -O atla atla_test   (if you haven't already)\n"
+            f"Then run tests as:\n"
+            f'  DATABASE_URL="postgresql+psycopg://atla:atla@localhost:5432/atla_test" python -m pytest tests/ -v\n',
+            returncode=1,
+        )
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture
+def db() -> Session:
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    from app.config import get_settings
+    import redis as redis_lib
+
+    settings = get_settings()
+    r = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
+    for key in r.scan_iter("ratelimit:*"):
+        r.delete(key)
+    yield

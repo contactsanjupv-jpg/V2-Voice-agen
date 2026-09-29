@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/*
+  Atla design tokens.
+
+  Concept: a voice AI receptionist for small, local businesses — a
+  human-feeling presence on the other end of the phone, not a cold
+  enterprise dashboard. Palette leans warm-ink + paper with a single
+  saturated "ring" red used sparingly (the one moment of boldness, per
+  design guidance) rather than a muted clay accent.
+*/
+
+:root {
+  --color-ink: #16181d;
+  --color-ink-soft: #4b4e58;
+  --color-paper: #f5f3ed;
+  --color-paper-raised: #fffdf9;
+  --color-line: #e3ded0;
+  --color-surface-dark: #202329;
+  --color-line-dark: #34383f;
+  --color-ring: #d6482f;
+  --color-ring-soft: #f2c9be;
+  --color-ok: #3f7a5c;
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-paper: var(--color-paper);
+  --color-paper-raised: var(--color-paper-raised);
+  --color-line: var(--color-line);
+  --color-surface-dark: var(--color-surface-dark);
+  --color-line-dark: var(--color-line-dark);
+  --color-ring: var(--color-ring);
+  --color-ring-soft: var(--color-ring-soft);
+  --color-ok: var(--color-ok);
+
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::selection {
+  background: var(--color-ring-soft);
+  color: var(--color-ink);
+}

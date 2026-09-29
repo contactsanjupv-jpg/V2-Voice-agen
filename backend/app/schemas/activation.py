@@ -1,0 +1,17 @@
+from pydantic import BaseModel
+
+
+class TestCallResponse(BaseModel):
+    call_id: str
+    access_token: str  # handed to the frontend's WebRTC client to join the call
+
+
+class ActivateRequest(BaseModel):
+    phone_number_id: str
+    agent_id: str
+
+
+class ActivateResponse(BaseModel):
+    phone_number_id: str
+    agent_id: str
+    status: str
