@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.deps import current_membership, require_role
+from app.auth.deps import current_membership, require_active_subscription, require_role
 from app.auth.rate_limit import RateLimitExceeded, check_rate_limit
 from app.config import get_settings
 from app.db.base import get_db
@@ -38,20 +38,22 @@ def list_phone_numbers(
 def purchase_phone_number(
     payload: PurchaseNumberRequest,
     membership: OrganizationMember = Depends(require_role(OrgRole.admin)),
+    _subscribed: OrganizationMember = Depends(require_active_subscription),
     db: Session = Depends(get_db),
 ):
     """
     One call, one action: Retell doesn't have a browse-then-buy flow (see
     RetellPhoneProvider docstring) — this both requests and purchases a
     number in one step. area_code is a preference, not a guarantee.
+    Costs real money, so it sits behind the subscription gate.
     """
     try:
         check_rate_limit(f"number-purchase:{membership.organization_id}", limit=10, window_seconds=86400)
     except RateLimitExceeded as e:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Daily phone number purchase limit reached") from e
 
-    provider = RetellPhoneProvider()
     try:
+        provider = RetellPhoneProvider()
         provisioned = provider.purchase_number(country=payload.country, area_code=payload.area_code)
     except RetellAPIError as e:
         logger.error(
@@ -59,6 +61,9 @@ def purchase_phone_number(
             membership.organization_id, payload.country, payload.area_code, e.status_code, e.body,
         )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Number provisioning failed") from e
+    except RuntimeError as e:
+        logger.error("Phone provider unavailable: %s", e)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Number provisioning is temporarily unavailable") from e
 
     number = PhoneNumber(
         organization_id=membership.organization_id,
@@ -91,6 +96,7 @@ def release_phone_number(
 
     provider = RetellPhoneProvider()
     try:
+        provider = RetellPhoneProvider()
         provider.release_number(number.retell_phone_number_id)
     except RetellAPIError as e:
         logger.error(
@@ -98,6 +104,9 @@ def release_phone_number(
             membership.organization_id, phone_number_id, e.status_code, e.body,
         )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not release number with provider") from e
+    except RuntimeError as e:
+        logger.error("Phone provider unavailable: %s", e)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Provider temporarily unavailable") from e
 
     number.status = PhoneNumberStatus.released
     db.commit()

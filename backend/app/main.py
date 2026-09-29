@@ -14,7 +14,8 @@ from app.core.error_handling import unhandled_exception_handler
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.webhooks.retell import router as retell_webhook_router
 from app.api.v1.billing import router as billing_router
-from app.webhooks.stripe import router as stripe_webhook_router
+from app.webhooks.paddle import router as paddle_webhook_router
+
 
 settings = get_settings()
 
@@ -41,7 +42,7 @@ app.include_router(calls_router)
 app.include_router(leads_router)
 app.include_router(retell_webhook_router)
 app.include_router(billing_router)
-app.include_router(stripe_webhook_router)
+app.include_router(paddle_webhook_router)
 
 
 @app.get("/health")

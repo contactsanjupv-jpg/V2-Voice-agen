@@ -19,7 +19,7 @@ class Subscription(Base, UUIDPKMixin, TimestampMixin):
     organization_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    billing_provider: Mapped[str] = mapped_column(String(32), default="stripe", nullable=False)
+    billing_provider: Mapped[str] = mapped_column(String(32), default="paddle", nullable=False)
     external_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     plan_id: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="trialing", nullable=False)

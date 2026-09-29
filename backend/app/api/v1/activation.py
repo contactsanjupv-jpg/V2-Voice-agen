@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.deps import current_membership, require_role
+from app.auth.deps import current_membership, require_active_subscription, require_role
 from app.auth.rate_limit import RateLimitExceeded, check_rate_limit
 from app.config import get_settings
 from app.db.base import get_db
@@ -48,9 +48,12 @@ def start_test_call(
 
     provider = RetellCallProvider()
     try:
+        provider = RetellCallProvider()
         session = provider.create_test_call(agent.retell_agent_id)
     except RetellAPIError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not start a test call with the voice provider") from e
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Provider temporarily unavailable") from e
 
     if agent.status == AgentStatus.draft:
         agent.status = AgentStatus.testing
@@ -63,6 +66,7 @@ def start_test_call(
 def activate_receptionist(
     payload: ActivateRequest,
     membership: OrganizationMember = Depends(require_role(OrgRole.admin)),
+    _subscribed: OrganizationMember = Depends(require_active_subscription),
     db: Session = Depends(get_db),
 ):
     """
@@ -94,9 +98,12 @@ def activate_receptionist(
 
     provider = RetellPhoneProvider()
     try:
+        provider = RetellPhoneProvider()
         provider.assign_agent(phone_number.retell_phone_number_id, agent.retell_agent_id, direction="inbound")
     except RetellAPIError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not assign the number to the receptionist") from e
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Provider temporarily unavailable") from e
 
     phone_number.agent_id = agent.id
     agent.status = AgentStatus.active

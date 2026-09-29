@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     RETELL_API_BASE_URL: str = "https://api.retellai.com"
     RETELL_WEBHOOK_MAX_SKEW_SECONDS: int = 300  # 5 minutes, per Retell's own replay window
 
+        # Paddle (billing) — server-side only
+    PADDLE_ENV: str = "sandbox"  # "sandbox" | "live"
+    PADDLE_API_KEY: str = ""
+    PADDLE_WEBHOOK_SECRET: str = ""
+    PADDLE_STARTER_PRICE_ID: str = ""  # pri_...
+    PADDLE_GROWTH_PRICE_ID: str = ""  # pri_...
+    PADDLE_WEBHOOK_MAX_SKEW_SECONDS: int = 300
+
     # Website-import structured extraction (server-side only — not the same
     # thing as "Claude powers the receptionist"; this is a one-off text
     # structuring call during onboarding, unrelated to Retell/call-time).

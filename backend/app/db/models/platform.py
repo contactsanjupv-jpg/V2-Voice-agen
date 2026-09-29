@@ -12,6 +12,7 @@ from app.db.models.mixins import TimestampMixin, UUIDPKMixin
 class WebhookSource(str, enum.Enum):
     retell = "retell"
     calendar_oauth = "calendar_oauth"
+    paddle = "paddle"
 
 
 class WebhookEvent(Base, UUIDPKMixin, TimestampMixin):
