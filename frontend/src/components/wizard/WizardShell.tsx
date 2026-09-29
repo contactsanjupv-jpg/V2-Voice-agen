@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 
-const STEP_LABELS = ["Website", "Review", "Voice", "Number", "Behavior", "Test", "Activate"];
+const STEP_LABELS = ["Website", "Review", "Voice", "Plan", "Number", "Behavior", "Test", "Activate"];
 
 export function WizardShell({
   step,

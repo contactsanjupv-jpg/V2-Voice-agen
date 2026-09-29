@@ -12,11 +12,14 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      isDev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
+        isDev
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.paddle.com"
+        : "script-src 'self' https://cdn.paddle.com",
+      "style-src 'self' 'unsafe-inline' https://*.paddle.com",
+      "frame-src 'self' https://*.paddle.com",
       "img-src 'self' data: https:",
       "media-src 'self' https:",
-      `connect-src 'self' ${API_ORIGIN}${isDev ? " ws://localhost:*" : ""}`,
+      `connect-src 'self' ${API_ORIGIN} https://*.paddle.com${isDev ? " ws://localhost:*" : ""}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

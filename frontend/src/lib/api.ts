@@ -89,6 +89,11 @@ export interface AgentOut {
   retell_agent_id: string | null;
 }
 
+export interface SubscriptionOut {
+  plan_id: string;
+  status: string;
+}
+
 export interface CallOut {
   id: string;
   direction: string;
@@ -166,6 +171,14 @@ export const api = {
     request<PhoneNumberOut>(`/api/v1/orgs/${orgId}/phone-numbers`, {
       method: "POST",
       body: JSON.stringify({ country, area_code: areaCode || null }),
+    }),
+
+  getSubscription: (orgId: string) =>
+  request<SubscriptionOut | null>(`/api/v1/orgs/${orgId}/billing/subscription`),
+  createCheckoutSession: (orgId: string, plan: "starter" | "growth") =>
+    request<{ checkout_url: string }>(`/api/v1/orgs/${orgId}/billing/checkout-session`, {
+      method: "POST",
+      body: JSON.stringify({ plan }),
     }),
 
   listPhoneNumbers: (orgId: string) => request<PhoneNumberOut[]>(`/api/v1/orgs/${orgId}/phone-numbers`),

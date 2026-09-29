@@ -11,6 +11,7 @@ import { StepPhoneNumber } from "@/components/wizard/StepPhoneNumber";
 import { StepBehavior } from "@/components/wizard/StepBehavior";
 import { StepTest } from "@/components/wizard/StepTest";
 import { StepActivate } from "@/components/wizard/StepActivate";
+import { StepPlan } from "@/components/wizard/StepPlan";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -107,18 +108,20 @@ export default function OnboardingPage() {
         />
       )}
 
-      {step === 4 && (
+      {step === 4 && <StepPlan orgId={orgId} onSubscribed={() => setStep(5)} onBack={() => setStep(3)} />}
+
+      {step === 5 && (
         <StepPhoneNumber
           orgId={orgId}
           onPurchased={(id) => {
             setPhoneNumberId(id);
-            setStep(5);
+            setStep(6);
           }}
-          onBack={() => setStep(3)}
+          onBack={() => setStep(4)}
         />
       )}
 
-      {step === 5 && businessId && voiceId && (
+      {step === 6 && businessId && voiceId && (
         <StepBehavior
           orgId={orgId}
           businessId={businessId}
@@ -126,18 +129,18 @@ export default function OnboardingPage() {
           voiceId={voiceId}
           onSaved={(newAgentId) => {
             setAgentId(newAgentId);
-            setStep(6);
+            setStep(7);
           }}
-          onBack={() => setStep(4)}
+          onBack={() => setStep(5)}
         />
       )}
 
-      {step === 6 && agentId && (
-        <StepTest orgId={orgId} agentId={agentId} onNext={() => setStep(7)} onBack={() => setStep(5)} />
+      {step === 7 && agentId && (
+        <StepTest orgId={orgId} agentId={agentId} onNext={() => setStep(8)} onBack={() => setStep(6)} />
       )}
 
-      {step === 7 && agentId && phoneNumberId && (
-        <StepActivate orgId={orgId} agentId={agentId} phoneNumberId={phoneNumberId} onBack={() => setStep(6)} />
+      {step === 8 && agentId && phoneNumberId && (
+        <StepActivate orgId={orgId} agentId={agentId} phoneNumberId={phoneNumberId} onBack={() => setStep(7)} />
       )}
     </WizardShell>
   );
