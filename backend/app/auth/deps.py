@@ -94,7 +94,7 @@ def require_active_subscription(
     """
     The money gate. Every action that costs US real money with an
     external provider sits behind this — checked server-side, never
-    trusted from the frontend. A trialing or active Stripe subscription
+    trusted from the frontend. A trialing or active subscription
     passes; anything else is rejected with 402 before any provider call.
     """
     from app.db.models.billing import Subscription
