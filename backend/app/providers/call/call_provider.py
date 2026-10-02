@@ -25,10 +25,10 @@ class CallDetail:
 
 class CallProvider(ABC):
     @abstractmethod
-    def create_test_call(self, provider_agent_id: str) -> WebCallSession:
-        """Browser-based WebRTC test call — no telephony hop, no real phone
-        number consumed. This is what backs the "Test AI" button."""
-        ...
+    def create_test_call(self, provider_agent_id: str, metadata: dict | None = None) -> WebCallSession: ...        
+    """Browser-based WebRTC test call — no telephony hop, no real phone
+    number consumed. This is what backs the "Test AI" button."""
+    ...
 
     @abstractmethod
     def get_call(self, provider_call_id: str) -> CallDetail: ...

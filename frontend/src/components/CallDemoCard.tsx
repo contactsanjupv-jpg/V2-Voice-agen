@@ -4,10 +4,10 @@ import { motion } from "framer-motion";
 import { CallWave } from "./CallWave";
 
 const TRANSCRIPT = [
-  { from: "caller", text: "Hi, do you have anything open tomorrow afternoon?" },
-  { from: "atla", text: "Let me check — 2:30 or 4:00 are both open tomorrow. Which works better?" },
-  { from: "caller", text: "4 o'clock is perfect." },
-  { from: "atla", text: "You're booked for 4:00 tomorrow. I'll text you a reminder an hour before." },
+  { from: "caller", text: "Hi, how much is a teeth cleaning, and are you open Saturday?" },
+  { from: "atla", text: "A cleaning is $120 and takes about 45 minutes. We're closed Saturdays — can I take your name and number for a callback?" },
+  { from: "caller", text: "Sure, it's Maria, 555-0142." },
+  { from: "atla", text: "Thanks Maria, I've passed that along and the office will call you back." },
 ];
 
 export function CallDemoCard() {
@@ -57,7 +57,7 @@ export function CallDemoCard() {
         className="mt-4 flex items-center gap-2 rounded-lg bg-[var(--color-ok)]/15 px-3 py-2 text-[13px] font-medium text-[#8fd4ac]"
       >
         <span className="h-1.5 w-1.5 rounded-full bg-[#8fd4ac]" />
-        Appointment booked — added to calendar
+        Lead captured — saved to your dashboard
       </motion.div>
     </motion.div>
   );

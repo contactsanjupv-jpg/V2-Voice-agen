@@ -21,28 +21,23 @@ const STAGES = [
   },
   {
     n: "04",
-    title: "Get a phone number",
-    body: "Get a new number in minutes, or we can help route your existing one.",
+    title: "Set how it behaves",
+    body: "Choose what it should do: answer questions, capture leads, take messages, or transfer calls to your own number.",
   },
   {
     n: "05",
-    title: "Set how it behaves",
-    body: "Choose what it should do: answer questions, capture leads, book appointments, transfer calls, take messages. Set a transfer number and your hours.",
+    title: "Talk to it",
+    body: "Test it right in your browser — a real conversation with your receptionist — before a single customer reaches it.",
   },
   {
     n: "06",
-    title: "Connect your calendar",
-    body: "Link Google Calendar so it only ever offers times that are actually open — it checks in real time, every call.",
+    title: "See your dashboard",
+    body: "Your receptionist and dashboard are ready before you pay anything. Talk to it as often as you like.",
   },
   {
     n: "07",
-    title: "Test it yourself",
-    body: "Call it, or test right in your browser, before a single real customer ever reaches it.",
-  },
-  {
-    n: "08",
-    title: "Turn it on",
-    body: "Activate, and it starts answering. Watch calls, leads, and booked appointments land on your dashboard as they happen.",
+    title: "Go live when you're ready",
+    body: "Choose a plan, get your business number, and switch it on. Calls and leads show up on your dashboard.",
   },
 ];
 
@@ -56,7 +51,7 @@ export default function HowItWorks() {
             From your website to answering the phone.
           </h1>
           <p className="mt-5 text-[17px] leading-relaxed text-[var(--color-ink-soft)]">
-            Eight steps, about ten minutes of your time. No developer, no phone system to configure.
+            Seven steps, about ten minutes of your time. No developer, no phone system to configure.
           </p>
         </section>
 

@@ -7,8 +7,7 @@ import { WizardActions, ErrorBanner } from "./WizardShell";
 const TASK_OPTIONS: { key: string; label: string }[] = [
   { key: "answer_questions", label: "Answer questions" },
   { key: "capture_leads", label: "Capture leads" },
-  { key: "book_appointments", label: "Book appointments" },
-  { key: "transfer_calls", label: "Transfer calls" },
+  { key: "transfer_calls", label: "Transfer calls to a person" },
   { key: "take_messages", label: "Take messages" },
 ];
 
@@ -36,12 +35,11 @@ export function StepBehavior({
   const [greeting, setGreeting] = useState(`Hi, thanks for calling ${businessName}, how can I help?`);
   const [personality, setPersonality] = useState("Professional");
   const [tasks, setTasks] = useState<Record<string, boolean>>({
-    answer_questions: true,
-    capture_leads: true,
-    book_appointments: false,
-    transfer_calls: false,
-    take_messages: true,
-  });
+  answer_questions: true,
+  capture_leads: true,
+  transfer_calls: false,
+  take_messages: true,
+});
   const [transferNumber, setTransferNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,12 +65,8 @@ export function StepBehavior({
       });
       onSaved(agent.id);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? `${err.message} — saving a receptionist needs a real Retell API key configured on the backend.`
-          : "Can't reach the server right now."
-      );
-    } finally {
+  setError(err instanceof ApiError ? err.message : "Can't reach the server right now.");
+  } finally {
       setLoading(false);
     }
   }
@@ -80,7 +74,9 @@ export function StepBehavior({
   return (
     <div>
       <h1 className="font-[family-name:var(--font-display)] text-[26px] font-bold tracking-tight">How should it act?</h1>
-      <p className="mt-2 text-[15px] text-[var(--color-ink-soft)]">Set the basics — no scripting or prompts to write.</p>
+      <p className="mt-2 text-[15px] text-[var(--color-ink-soft)]">
+  Set the basics — no scripting or prompts to write. It already knows what we learned from your business.
+</p>
 
       <div className="mt-6 space-y-4">
         {error && <ErrorBanner message={error} />}
@@ -140,7 +136,7 @@ export function StepBehavior({
             <input
               value={transferNumber}
               onChange={(e) => setTransferNumber(e.target.value)}
-              placeholder="+1…"
+              placeholder="+14155551234"
               className={inputClass}
             />
           </div>

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Phone, Users, Settings } from "lucide-react";
+import { Home, Mic, Phone, Users } from "lucide-react";
 import { Organization } from "@/lib/api";
 
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: Home },
   { href: "/dashboard/calls", label: "Calls", icon: Phone },
   { href: "/dashboard/leads", label: "Leads", icon: Users },
+  { href: "/dashboard/test", label: "Test it", icon: Mic },
 ];
 
 export function DashboardShell({
@@ -49,16 +50,6 @@ export function DashboardShell({
             );
           })}
         </nav>
-
-        <div className="border-t border-[var(--color-line)] px-3 py-4">
-          <Link
-            href="/settings"
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[14px] font-medium text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]"
-          >
-            <Settings className="h-4 w-4" strokeWidth={1.75} />
-            Settings
-          </Link>
-        </div>
       </aside>
 
       <main className="flex-1 overflow-y-auto px-6 py-8 md:px-10">{children}</main>

@@ -8,7 +8,7 @@ export function Footer() {
           <div>
             <div className="font-[family-name:var(--font-display)] text-lg font-bold">Atla</div>
             <p className="mt-2 max-w-xs text-sm text-[var(--color-ink-soft)]">
-              An AI receptionist that answers every call, books appointments, and never puts a caller on hold.
+              An AI receptionist that answers every call, captures every lead, and never puts a caller on hold.
             </p>
           </div>
 

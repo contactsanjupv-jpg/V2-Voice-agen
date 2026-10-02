@@ -17,7 +17,7 @@ const publicSans = Public_Sans({
 export const metadata: Metadata = {
   title: "Atla — an AI receptionist that answers every call",
   description:
-    "Atla answers your business phone, books appointments, and never misses a call — set up in minutes, no tech knowledge needed.",
+    "Atla answers your business phone, captures every lead, and never misses a call — set up in minutes, no tech knowledge needed.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

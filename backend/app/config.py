@@ -24,8 +24,23 @@ class Settings(BaseSettings):
     RETELL_API_KEY: str = ""
     RETELL_API_BASE_URL: str = "https://api.retellai.com"
     RETELL_WEBHOOK_MAX_SKEW_SECONDS: int = 300  # 5 minutes, per Retell's own replay window
+    # Public URL Retell can reach (ngrok/hosted URL in dev). Used for the
+    # per-agent webhook, so it must NOT be localhost when testing real calls.
+    BACKEND_PUBLIC_URL: str = "http://localhost:8000"
+    # Text model for the receptionist's Retell LLM. Empty = Retell's default.
+    # This is the biggest per-minute cost lever — set deliberately.
+    RETELL_LLM_MODEL: str = ""
+    # Hard ceiling on any single call (Retell allows 60s–7200s).
+    AGENT_MAX_CALL_SECONDS: int = 900
+    # Cap on business-knowledge text placed in the agent prompt (cost + latency).
+    AGENT_KNOWLEDGE_MAX_CHARS: int = 24000
+    # Free browser test calls an org may start BEFORE it has an active
+    # subscription (lifetime). Each one costs real Retell money.
+    FREE_TEST_CALLS_PER_ORG: int = 5
+    # The browser auto-ends a test call after this many seconds.
+    TEST_CALL_MAX_SECONDS: int = 180
 
-        # Paddle (billing) — server-side only
+    # Paddle (billing) — server-side only
     PADDLE_ENV: str = "sandbox"  # "sandbox" | "live"
     PADDLE_API_KEY: str = ""
     PADDLE_WEBHOOK_SECRET: str = ""

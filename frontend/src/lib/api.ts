@@ -87,6 +87,7 @@ export interface AgentOut {
   name: string;
   status: string;
   retell_agent_id: string | null;
+  synced: boolean;
 }
 
 export interface SubscriptionOut {
@@ -202,7 +203,7 @@ export const api = {
   listAgents: (orgId: string) => request<AgentOut[]>(`/api/v1/orgs/${orgId}/agents`),
 
   startTestCall: (orgId: string, agentId: string) =>
-    request<{ call_id: string; access_token: string }>(`/api/v1/orgs/${orgId}/agents/${agentId}/test-call`, {
+    request<{ call_id: string; access_token: string; max_seconds: number }>(`/api/v1/orgs/${orgId}/agents/${agentId}/test-call`, {
       method: "POST",
     }),
 

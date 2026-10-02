@@ -87,6 +87,19 @@ def require_platform_admin(user: User = Depends(get_current_user), db: Session =
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
     return user
 
+def has_active_subscription(db: Session, organization_id) -> bool:
+    """Single source of truth for "is this org paying" — used by every gate."""
+    from app.db.models.billing import Subscription
+
+    subscription = (
+        db.query(Subscription)
+        .filter(Subscription.organization_id == organization_id)
+        .order_by(Subscription.created_at.desc())
+        .first()
+    )
+    return subscription is not None and subscription.status in ("trialing", "active")
+
+
 def require_active_subscription(
     membership: OrganizationMember = Depends(current_membership),
     db: Session = Depends(get_db),
@@ -97,15 +110,7 @@ def require_active_subscription(
     trusted from the frontend. A trialing or active subscription
     passes; anything else is rejected with 402 before any provider call.
     """
-    from app.db.models.billing import Subscription
-
-    subscription = (
-        db.query(Subscription)
-        .filter(Subscription.organization_id == membership.organization_id)
-        .order_by(Subscription.created_at.desc())
-        .first()
-    )
-    if subscription is None or subscription.status not in ("trialing", "active"):
+    if not has_active_subscription(db, membership.organization_id):
         raise HTTPException(
             status.HTTP_402_PAYMENT_REQUIRED,
             "An active subscription is required for this action. Please choose a plan to continue.",

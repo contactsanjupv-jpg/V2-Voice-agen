@@ -1,26 +1,37 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.deps import current_membership, require_role
-from app.config import get_settings
+from app.core.locks import LockNotAcquired
 from app.db.base import get_db
 from app.db.models.business import Business
 from app.db.models.tenancy import OrganizationMember, OrgRole
 from app.db.models.voice_agent import Agent, Voice
 from app.providers.retell_client import RetellAPIError
 from app.schemas.catalog import AgentConfigRequest, AgentOut
-from app.services.agent_service import create_or_update_agent
+from app.services.agent_service import save_agent_settings, sync_agent_to_provider
 
 router = APIRouter(prefix="/api/v1/orgs/{organization_id}/agents", tags=["agents"])
-settings = get_settings()
+logger = logging.getLogger("atla.agents")
+
+
+def _agent_out(agent: Agent) -> AgentOut:
+    return AgentOut(
+        id=str(agent.id),
+        name=agent.name,
+        status=agent.status.value,
+        retell_agent_id=agent.retell_agent_id,
+        synced=agent.retell_agent_id is not None and agent.synced_version == agent.version,
+    )
 
 
 @router.get("", response_model=list[AgentOut])
 def list_agents(membership: OrganizationMember = Depends(current_membership), db: Session = Depends(get_db)):
     agents = db.query(Agent).filter(Agent.organization_id == membership.organization_id).all()
-    return [AgentOut(id=str(a.id), name=a.name, status=a.status.value, retell_agent_id=a.retell_agent_id) for a in agents]
+    return [_agent_out(a) for a in agents]
 
 
 @router.put("/{business_id}", response_model=AgentOut)
@@ -38,31 +49,31 @@ def upsert_agent(
     if business is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Business not found")
 
-    voice = db.query(Voice).filter(Voice.id == uuid.UUID(payload.voice_id)).first()
+    try:
+        voice = db.query(Voice).filter(Voice.id == uuid.UUID(payload.voice_id)).first()
+    except ValueError:
+        voice = None
     if voice is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown voice_id")
 
-    existing_agent = db.query(Agent).filter(Agent.business_id == business.id).first()
-    if existing_agent is not None:
-        existing_agent.name = payload.name
-        existing_agent.greeting = payload.greeting
-        existing_agent.personality = payload.personality
-        existing_agent.language = payload.language
-        existing_agent.tasks = payload.tasks
-        existing_agent.transfer_number = payload.transfer_number
-        existing_agent.business_hours = payload.business_hours
-        existing_agent.after_hours_behavior = payload.after_hours_behavior
+    agent = save_agent_settings(
+        db, organization_id=membership.organization_id, business=business, voice=voice, payload=payload
+    )
 
     try:
-        agent = create_or_update_agent(
-            db,
-            organization_id=membership.organization_id,
-            business=business,
-            agent=existing_agent,
-            voice=voice,
-            webhook_base_url=settings.FRONTEND_URL.replace("3000", "8000"),  # backend's own public URL in real deploy
-        )
+        agent = sync_agent_to_provider(db, agent, business, voice)
+    except LockNotAcquired as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, "A save is already in progress — try again in a moment") from e
     except RetellAPIError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not save receptionist configuration with the voice provider") from e
+        logger.error(
+            "Retell sync failed [agent=%s]: status=%s ambiguous=%s body=%s", agent.id, e.status_code, e.ambiguous, e.body
+        )
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            "Your changes are saved, but we couldn't apply them to your receptionist yet. Please try again.",
+        ) from e
+    except RuntimeError as e:
+        logger.error("Voice provider not configured: %s", e)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Voice provider temporarily unavailable") from e
 
-    return AgentOut(id=str(agent.id), name=agent.name, status=agent.status.value, retell_agent_id=agent.retell_agent_id)
+    return _agent_out(agent)

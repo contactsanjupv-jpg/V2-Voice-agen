@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Link } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { ErrorBanner } from "./WizardShell";
 
@@ -28,10 +29,10 @@ export function StepActivate({
       setActivated(true);
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? `${err.message} — activation needs a real Retell API key configured on the backend.`
-          : "Can't reach the server right now."
-      );
+          err instanceof ApiError
+          ? err.message
+         : "Can't reach the server right now."
+    );
     } finally {
       setLoading(false);
     }

@@ -47,6 +47,9 @@ class Agent(Base, UUIDPKMixin, TimestampMixin):
 
     # Null until the first successful create-agent call against Retell.
     retell_agent_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True, index=True)
+    # The Retell LLM (response engine) that holds the prompt + tools. An agent
+    # without one has no instructions and no business knowledge.
+    retell_llm_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     greeting: Mapped[str | None] = mapped_column(String(2048), nullable=True)
@@ -63,6 +66,10 @@ class Agent(Base, UUIDPKMixin, TimestampMixin):
     status: Mapped[AgentStatus] = mapped_column(
         Enum(AgentStatus, name="agent_status"), default=AgentStatus.draft, nullable=False
     )
+    # `version` bumps on every saved change; `synced_version` is the version
+    # Retell has actually received. synced_version < version means our saved
+    # config is NOT what callers currently hear.
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    synced_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     voice: Mapped["Voice"] = relationship()

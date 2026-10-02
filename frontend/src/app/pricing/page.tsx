@@ -13,7 +13,7 @@ const PLANS = [
     price: "$79",
     period: "/month",
     detail: "One phone number, enough minutes for a single location finding its footing.",
-    features: ["1 phone number", "1 receptionist", "Google Calendar booking", "Call transcripts & recordings"],
+    features: ["1 phone number", "1 receptionist", "Lead capture", "Call summaries on your dashboard"],
     highlighted: false,
   },
   {

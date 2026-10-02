@@ -10,8 +10,11 @@ class RetellCallProvider(CallProvider):
     def __init__(self, client: RetellClient | None = None):
         self.client = client or RetellClient()
 
-    def create_test_call(self, provider_agent_id: str) -> WebCallSession:
-        raw = self.client.request("POST", "/create-web-call", json={"agent_id": provider_agent_id})
+    def create_test_call(self, provider_agent_id: str, metadata: dict | None = None) -> WebCallSession:
+        body: dict = {"agent_id": provider_agent_id}
+        if metadata:
+            body["metadata"] = metadata  # echoed back in Retell's webhook payloads
+        raw = self.client.request("POST", "/create-web-call", json=body)
         return WebCallSession(provider_call_id=raw["call_id"], access_token=raw["access_token"])
 
     def get_call(self, provider_call_id: str) -> CallDetail:

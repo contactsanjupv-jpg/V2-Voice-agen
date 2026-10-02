@@ -7,11 +7,8 @@ import { WizardShell } from "@/components/wizard/WizardShell";
 import { StepWebsite } from "@/components/wizard/StepWebsite";
 import { StepReview } from "@/components/wizard/StepReview";
 import { StepVoice } from "@/components/wizard/StepVoice";
-import { StepPhoneNumber } from "@/components/wizard/StepPhoneNumber";
 import { StepBehavior } from "@/components/wizard/StepBehavior";
 import { StepTest } from "@/components/wizard/StepTest";
-import { StepActivate } from "@/components/wizard/StepActivate";
-import { StepPlan } from "@/components/wizard/StepPlan";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -23,7 +20,6 @@ export default function OnboardingPage() {
   const [businessId, setBusinessId] = useState<string | null>(null);
   const [structuredInfo, setStructuredInfo] = useState<StructuredBusinessInfo | null>(null);
   const [voiceId, setVoiceId] = useState<string | null>(null);
-  const [phoneNumberId, setPhoneNumberId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,20 +104,7 @@ export default function OnboardingPage() {
         />
       )}
 
-      {step === 4 && <StepPlan orgId={orgId} onSubscribed={() => setStep(5)} onBack={() => setStep(3)} />}
-
-      {step === 5 && (
-        <StepPhoneNumber
-          orgId={orgId}
-          onPurchased={(id) => {
-            setPhoneNumberId(id);
-            setStep(6);
-          }}
-          onBack={() => setStep(4)}
-        />
-      )}
-
-      {step === 6 && businessId && voiceId && (
+      {step === 4 && businessId && voiceId && (
         <StepBehavior
           orgId={orgId}
           businessId={businessId}
@@ -129,18 +112,14 @@ export default function OnboardingPage() {
           voiceId={voiceId}
           onSaved={(newAgentId) => {
             setAgentId(newAgentId);
-            setStep(7);
+            setStep(5);
           }}
-          onBack={() => setStep(5)}
+          onBack={() => setStep(3)}
         />
       )}
 
-      {step === 7 && agentId && (
-        <StepTest orgId={orgId} agentId={agentId} onNext={() => setStep(8)} onBack={() => setStep(6)} />
-      )}
-
-      {step === 8 && agentId && phoneNumberId && (
-        <StepActivate orgId={orgId} agentId={agentId} phoneNumberId={phoneNumberId} onBack={() => setStep(7)} />
+      {step === 5 && agentId && (
+        <StepTest orgId={orgId} agentId={agentId} onNext={() => router.push("/dashboard")} onBack={() => setStep(4)} />
       )}
     </WizardShell>
   );

@@ -2,18 +2,18 @@ import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { CallDemoCard } from "@/components/CallDemoCard";
-import { ArrowRight, Calendar, MessageSquareText, PhoneForwarded } from "lucide-react";
+import { ArrowRight, ClipboardList, MessageSquareText, PhoneForwarded } from "lucide-react";
 
 const STEPS = [
   { n: "1", title: "Give us your website", detail: "We read it and learn your services, hours, and FAQs." },
   { n: "2", title: "Review what we found", detail: "Edit anything before it becomes your receptionist's knowledge." },
-  { n: "3", title: "Pick a voice and number", detail: "Choose how it sounds, get a phone number in minutes." },
-  { n: "4", title: "Turn it on", detail: "Test it yourself first, then activate for real calls." },
+  { n: "3", title: "Pick a voice and behavior", detail: "Choose how it sounds and what it should handle." },
+  { n: "4", title: "Talk to it, then go live", detail: "Test it in your browser first, then get a number and switch it on." },
 ];
 
 const CAPABILITIES = [
   { icon: MessageSquareText, title: "Answers like someone who works there", detail: "Trained on your actual services, hours, and policies — not a generic script." },
-  { icon: Calendar, title: "Books real appointments", detail: "Checks your actual calendar before offering a time. Never invents availability." },
+  { icon: ClipboardList, title: "Captures leads", detail: "Gathers caller information and saves it to your dashboard." },
   { icon: PhoneForwarded, title: "Knows when to hand off", detail: "Transfers to a real person when a caller needs one, on your terms." },
 ];
 
@@ -33,8 +33,7 @@ export default function Home() {
                 Even the ones you&apos;d miss.
               </h1>
               <p className="mt-5 max-w-md text-[17px] leading-relaxed text-[var(--color-ink-soft)]">
-                Atla picks up your business phone, answers questions about your business, and books real
-                appointments on your calendar — set up from your website in about ten minutes.
+                Atla picks up your business phone, answers questions about your business, and captures every caller&apos;s details — set up from your website in about ten minutes.
               </p>
               <div className="mt-8 flex items-center gap-4">
                 <Link
