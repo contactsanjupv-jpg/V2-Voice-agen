@@ -1,3 +1,4 @@
+import logging
 """
 Orchestrates spec §7-8's full importer flow:
   URL -> SSRF-safe fetch -> relevant page discovery -> extraction ->
@@ -10,6 +11,8 @@ from app.core.llm_extraction import LLMExtractionError, extract_business_info
 from app.core.ssrf_safe_fetch import FetchTooLargeError, SSRFBlockedError, safe_fetch
 from app.core.website_extraction import ExtractedPage, parse_html, rank_links_by_relevance
 
+logger = logging.getLogger("atla.import")
+
 MAX_PAGES_CRAWLED = 5  # spec §8: "crawl limits"
 
 
@@ -21,7 +24,12 @@ class ImportResult:
 
 
 class WebsiteImportError(Exception):
-    pass
+    """str(e) is ALWAYS customer-safe. Internal detail is logged, never put in the message."""
+
+
+MSG_UNREACHABLE = "We couldn't reach that website. Check the address, or enter your details manually instead."
+MSG_TOO_LARGE = "That page is too large to import automatically. You can enter your details manually instead."
+MSG_UNREADABLE = "We reached your website but couldn't read it automatically. Please try again, or enter your details manually."
 
 
 def import_website(start_url: str) -> ImportResult:
@@ -31,9 +39,11 @@ def import_website(start_url: str) -> ImportResult:
     try:
         first = safe_fetch(start_url)
     except SSRFBlockedError as e:
-        raise WebsiteImportError(f"That URL couldn't be safely fetched: {e}") from e
+        logger.warning("Import blocked for %s: %s", start_url, e)
+        raise WebsiteImportError(MSG_UNREACHABLE) from e
     except FetchTooLargeError as e:
-        raise WebsiteImportError(f"That page was too large to import: {e}") from e
+        logger.warning("Import too large for %s: %s", start_url, e)
+        raise WebsiteImportError(MSG_TOO_LARGE) from e
 
     first_page = parse_html(first.text, first.final_url)
     pages.append(first_page)
@@ -68,11 +78,9 @@ def import_website(start_url: str) -> ImportResult:
 
     try:
         structured_info = extract_business_info(combined_text, json_ld_hints)
-    except LLMExtractionError as e:
-        # The crawl itself succeeded — surface the raw snapshot so the
-        # customer isn't blocked entirely, but be explicit this step
-        # didn't complete rather than silently returning an empty draft.
-        raise WebsiteImportError(f"Fetched the site, but structuring the results failed: {e}") from e
+    except Exception as e:  # noqa: BLE001 — LLMExtractionError, network, timeouts: all internal
+        logger.error("Business extraction failed for %s: %s", start_url, e)
+        raise WebsiteImportError(MSG_UNREADABLE) from e
 
     return ImportResult(
         pages_fetched=list(fetched_urls),

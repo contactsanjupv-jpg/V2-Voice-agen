@@ -32,3 +32,30 @@ class PhoneNumber(Base, UUIDPKMixin, TimestampMixin):
     status: Mapped[PhoneNumberStatus] = mapped_column(
         Enum(PhoneNumberStatus, name="phone_number_status"), default=PhoneNumberStatus.active, nullable=False
     )
+
+
+
+class PhoneProvisioning(Base, UUIDPKMixin, TimestampMixin):
+    """
+    Durable record of "this org is getting a number", written BEFORE we call the
+    provider. One row per org (unique) => at most one number per org. The
+    deterministic `nickname` is stored on the provider resource, so an ambiguous
+    purchase can be reconciled by asking the provider whether it exists.
+    status: requested | purchasing | ambiguous | purchased | failed | released
+    """
+
+    __tablename__ = "phone_provisionings"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    generation: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    nickname: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="requested", nullable=False)
+    country: Mapped[str] = mapped_column(String(4), default="US", nullable=False)
+    area_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    phone_number_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("phone_numbers.id", ondelete="SET NULL"), nullable=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)

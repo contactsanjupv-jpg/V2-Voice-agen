@@ -1,18 +1,15 @@
 """
-Voices are a shared, non-tenant-scoped catalog mirrored from Retell (see
-app/db/models/voice_agent.py). This endpoint reads OUR cached copy — a
-background job (app/workers/voice_catalog_sync.py, refresh on a schedule)
-is what actually calls RetellVoiceProvider.list_voices() and upserts it,
-so a customer browsing voices never waits on a live Retell round trip and
-we're not making N Retell calls for N concurrent customers browsing voices.
+Voices are a shared catalog mirrored from Retell. This endpoint reads OUR cached
+copy; the worker refreshes it, and an empty catalog is bootstrapped on first use.
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user
 from app.db.base import get_db
 from app.db.models.voice_agent import Voice
 from app.schemas.catalog import VoiceOut
+from app.workers.voice_catalog_sync import VoicesUnavailable, ensure_voice_catalog
 
 router = APIRouter(prefix="/api/v1/voices", tags=["voices"])
 
@@ -25,6 +22,10 @@ def list_voices(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
+    try:
+        ensure_voice_catalog(db)  # fresh deployment: populate from the provider instead of failing
+    except VoicesUnavailable as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Voices are temporarily unavailable. Please try again in a moment.") from e
     query = db.query(Voice)
     if gender:
         query = query.filter(Voice.gender == gender)
@@ -33,4 +34,4 @@ def list_voices(
     if search:
         query = query.filter(Voice.name.ilike(f"%{search}%"))
     voices = query.order_by(Voice.name).all()
-    return [VoiceOut(**{**v.__dict__, "id": str(v.id)}) for v in voices]
+    return voices

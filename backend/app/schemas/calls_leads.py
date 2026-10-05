@@ -1,10 +1,14 @@
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
+
+# Database ids are UUIDs; the API exposes them as strings.
+StrId = Annotated[str, BeforeValidator(str)]
 
 
 class CallOut(BaseModel):
-    id: str
+    id: StrId
     direction: str
     caller_number: str | None
     started_at: datetime | None
@@ -14,13 +18,12 @@ class CallOut(BaseModel):
     disconnect_reason: str | None
     summary: str | None
     sentiment: str | None
-    cost_cents: int | None
 
     model_config = {"from_attributes": True}
 
 
 class LeadOut(BaseModel):
-    id: str
+    id: StrId
     name: str | None
     phone: str | None
     email: str | None

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { Loader2 } from "lucide-react";
@@ -161,6 +162,14 @@ export function AuthForm() {
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {mode === "signup" ? "Create account" : "Log in"}
         </button>
+
+        {mode === "login" && (
+          <p className="text-center text-[13.5px]">
+            <Link href="/forgot-password" className="text-[var(--color-ink-soft)] underline">
+              Forgot your password?
+            </Link>
+          </p>
+        )}
       </form>
     </div>
   );

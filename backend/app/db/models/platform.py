@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,7 +30,11 @@ class WebhookEvent(Base, UUIDPKMixin, TimestampMixin):
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     processed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # received -> processed | failed (retryable, backoff) -> dead (gave up; visible, re-queueable)
     status: Mapped[str] = mapped_column(String(32), default="received", nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_attempt_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AuditLog(Base, UUIDPKMixin, TimestampMixin):

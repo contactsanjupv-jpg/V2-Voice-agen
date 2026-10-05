@@ -26,11 +26,7 @@ export function StepVoice({
     api
       .listVoices()
       .then(setVoices)
-      .catch(() =>
-        setError(
-          "Couldn't load the voice library — this needs a Retell API key configured on the backend (RETELL_API_KEY in .env), plus the voice catalog synced at least once."
-        )
-      )
+      .catch(() => setError("We couldn't load the voices just now. Please refresh in a moment."))
       .finally(() => setLoading(false));
 
     // Stop and clean up any preview when leaving this step.

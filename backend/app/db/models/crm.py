@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,7 @@ class LeadStatus(str, enum.Enum):
 
 class Lead(Base, UUIDPKMixin, TimestampMixin):
     __tablename__ = "leads"
+    __table_args__ = (Index("uq_leads_call", "call_id", unique=True, postgresql_where="call_id IS NOT NULL"),)
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True

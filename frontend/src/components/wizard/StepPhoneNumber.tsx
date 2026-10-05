@@ -26,11 +26,7 @@ export function StepPhoneNumber({
       const number = await api.purchasePhoneNumber(orgId, "US", areaCode.trim() || undefined);
       setPurchased(number);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? `${err.message} — this needs a real Retell API key configured on the backend.`
-          : "Can't reach the server right now."
-      );
+      setError(err instanceof ApiError ? err.message : "Can't reach the server right now.");
     } finally {
       setPurchasing(false);
     }
@@ -71,11 +67,6 @@ export function StepPhoneNumber({
                 <Phone className="h-3.5 w-3.5" />
                 {purchased.number}
               </div>
-              {purchased.monthly_cost_cents != null && (
-                <div className="text-[13px] text-[var(--color-ink-soft)]">
-                  ${(purchased.monthly_cost_cents / 100).toFixed(2)}/mo
-                </div>
-              )}
             </div>
           </div>
         )}

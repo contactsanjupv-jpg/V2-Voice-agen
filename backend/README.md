@@ -101,3 +101,15 @@ this section covers: environment variable management in production,
 running Alembic migrations as a release step (not ad hoc against prod),
 and the background-worker process (`app/workers/`) needs a real queue
 (RQ/Celery/arq) instead of the synchronous stand-in used in local dev.
+
+## Running the background worker
+
+Call events, phone-number reconciliation, billing-lapse enforcement and the voice catalog
+all run in one worker process next to the API. Without it, failed Retell events are never
+retried and cancelled customers' numbers are never released.
+
+    alembic upgrade head
+    uvicorn app.main:app --reload            # API
+    python -m app.workers.run_worker         # worker (separate terminal / process)
+
+Set `ENV=production` in production (secure cookies, API docs off).

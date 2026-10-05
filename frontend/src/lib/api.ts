@@ -78,7 +78,6 @@ export interface PhoneNumberOut {
   number: string;
   area_code: string | null;
   country: string;
-  monthly_cost_cents: number | null;
   status: string;
 }
 
@@ -93,6 +92,25 @@ export interface AgentOut {
 export interface SubscriptionOut {
   plan_id: string;
   status: string;
+  current_period_end: string | null;
+  // set when the customer cancelled but service continues until this date
+  cancel_effective_at: string | null;
+}
+
+export interface OnboardingState {
+  step: "website" | "review" | "voice" | "behavior" | "test" | "done";
+  business_id: string | null;
+  business_name: string | null;
+  structured_info: StructuredBusinessInfo | null;
+  agent: { id: string; synced: boolean; voice_id: string | null } | null;
+  tested: boolean;
+}
+
+export interface UsageOut {
+  period_start: string | null;
+  period_end: string | null;
+  calls_count: number;
+  billable_seconds: number;
 }
 
 export interface CallOut {
@@ -106,7 +124,6 @@ export interface CallOut {
   disconnect_reason: string | null;
   summary: string | null;
   sentiment: string | null;
-  cost_cents: number | null;
 }
 
 export interface LeadOut {
@@ -174,6 +191,20 @@ export const api = {
       body: JSON.stringify({ country, area_code: areaCode || null }),
     }),
 
+  getOnboarding: (orgId: string) => request<OnboardingState>(`/api/v1/orgs/${orgId}/onboarding`),
+  getUsage: (orgId: string) => request<UsageOut>(`/api/v1/orgs/${orgId}/usage`),
+  requestPasswordReset: (email: string) =>
+    request<void>("/api/v1/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
+  confirmPasswordReset: (token: string, new_password: string) =>
+    request<void>("/api/v1/auth/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, new_password }) }),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>("/api/v1/auth/password/change", { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
+  deleteAccount: (orgId: string, confirm_name: string, password: string) =>
+    request<void>(`/api/v1/orgs/${orgId}/delete`, { method: "POST", body: JSON.stringify({ confirm_name, password }) }),
+  cancelSubscription: (orgId: string) =>
+    request<{ status: string }>(`/api/v1/orgs/${orgId}/billing/cancel`, { method: "POST" }),
+  getBillingManage: (orgId: string) =>
+    request<{ update_payment_method_url: string | null }>(`/api/v1/orgs/${orgId}/billing/manage`),
   getSubscription: (orgId: string) =>
   request<SubscriptionOut | null>(`/api/v1/orgs/${orgId}/billing/subscription`),
   createCheckoutSession: (orgId: string, plan: "starter" | "growth") =>

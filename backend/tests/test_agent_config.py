@@ -47,7 +47,7 @@ class FakeRetell:
         if path == "/create-agent":
             self.ids["agent"] = f"agent_{self._tag}_{self._n}"
             return {"agent_id": self.ids["agent"]}
-        if path == "/create-web-call":
+        if path == "/v2/create-web-call":
             return {"call_id": f"call_{self._n}_{uuid.uuid4().hex[:6]}", "access_token": "tok_test"}
         return {}
 
@@ -279,7 +279,7 @@ def test_cannot_test_an_unsynced_agent(fake):
     _put(c, org, biz, _body(voice))
     resp = c.post(f"/api/v1/orgs/{org}/agents/{_agent_id(c, org)}/test-call")
     assert resp.status_code == 409
-    assert fake.to("/create-web-call") == []  # no Retell call, no cost
+    assert fake.to("/v2/create-web-call") == []  # no Retell call, no cost
 
 
 def test_test_call_creates_a_traceable_local_call_and_returns_the_time_cap(fake):
@@ -292,7 +292,7 @@ def test_test_call_creates_a_traceable_local_call_and_returns_the_time_cap(fake)
     data = resp.json()
     assert data["access_token"] == "tok_test" and data["max_seconds"] == settings.TEST_CALL_MAX_SECONDS
 
-    sent = fake.to("/create-web-call")[0][2]
+    sent = fake.to("/v2/create-web-call")[0][2]
     assert sent["agent_id"] == fake.ids["agent"]
     assert sent["metadata"]["organization_id"] == org
 
@@ -313,7 +313,7 @@ def test_free_test_allowance_is_enforced_until_the_org_pays(fake, monkeypatch):
     assert c.post(url).status_code == 200
     assert c.post(url).status_code == 200
     assert c.post(url).status_code == 402
-    assert len(fake.to("/create-web-call")) == 2  # the blocked attempt cost nothing
+    assert len(fake.to("/v2/create-web-call")) == 2  # the blocked attempt cost nothing
 
     db = SessionLocal()
     db.add(Subscription(organization_id=uuid.UUID(org), plan_id="starter", status="active", billing_provider="paddle"))
@@ -384,3 +384,56 @@ def test_get_timeouts_are_retried(boom):
     with pytest.raises(RetellAPIError):
         RetellClient(api_key="k").request("GET", "/list-voices")
     assert boom.attempts == 3
+
+    # ---------------- Retell's web-call route is versioned (the unversioned path 404s) ----------------
+
+def test_web_call_uses_a_versioned_path_and_never_the_unversioned_one():
+    sent = []
+
+    class Client:
+        def request(self, method, path, json=None, params=None):
+            sent.append(path)
+            if path == "/create-web-call":  # what Retell really answers for the old path
+                raise RetellAPIError(404, "Cannot POST /create-web-call")
+            return {"call_id": "call_1", "access_token": "tok"}
+
+    session = RetellCallProvider(client=Client()).create_test_call("agent_1")
+    assert session.provider_call_id == "call_1" and sent == ["/v2/create-web-call"]
+
+
+def test_a_404_on_one_version_falls_through_to_the_next_but_other_errors_do_not():
+    class Only3:
+        def __init__(self):
+            self.sent = []
+
+        def request(self, method, path, json=None, params=None):
+            self.sent.append(path)
+            if path != "/v3/create-web-call":
+                raise RetellAPIError(404, "Cannot POST " + path)
+            return {"call_id": "call_3", "access_token": "tok"}
+
+    client = Only3()
+    assert RetellCallProvider(client=client).create_test_call("a").provider_call_id == "call_3"
+    assert client.sent == ["/v2/create-web-call", "/v3/create-web-call"]
+
+    class Unauthorized:
+        sent = []
+
+        def request(self, method, path, json=None, params=None):
+            self.sent.append(path)
+            raise RetellAPIError(401, "Unauthorized")
+
+    client = Unauthorized()
+    with pytest.raises(RetellAPIError) as exc:
+        RetellCallProvider(client=client).create_test_call("a")
+    assert exc.value.status_code == 401 and client.sent == ["/v2/create-web-call"]  # a real answer is final
+
+
+def test_all_versions_missing_surfaces_the_404():
+    class Nothing:
+        def request(self, method, path, json=None, params=None):
+            raise RetellAPIError(404, "Cannot POST " + path)
+
+    with pytest.raises(RetellAPIError) as exc:
+        RetellCallProvider(client=Nothing()).create_test_call("a")
+    assert exc.value.status_code == 404

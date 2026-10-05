@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Mic, Phone, Users } from "lucide-react";
+import { Home, Mic, Phone, Settings, Users } from "lucide-react";
 import { Organization } from "@/lib/api";
 
 const NAV = [
@@ -10,6 +10,7 @@ const NAV = [
   { href: "/dashboard/calls", label: "Calls", icon: Phone },
   { href: "/dashboard/leads", label: "Leads", icon: Users },
   { href: "/dashboard/test", label: "Test it", icon: Mic },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 export function DashboardShell({

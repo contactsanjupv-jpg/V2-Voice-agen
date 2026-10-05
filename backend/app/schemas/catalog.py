@@ -1,6 +1,10 @@
 import re
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
+
+StrId = Annotated[str, BeforeValidator(str)]
 
 _E164 = re.compile(r"^\+[1-9]\d{6,14}$")
 # The only behaviours the product genuinely supports. Anything else the
@@ -10,7 +14,7 @@ PERSONALITIES = ("friendly", "professional", "concise")
 
 
 class VoiceOut(BaseModel):
-    id: str
+    id: StrId
     retell_voice_id: str
     name: str
     provider: str
@@ -23,11 +27,10 @@ class VoiceOut(BaseModel):
 
 
 class PhoneNumberOut(BaseModel):
-    id: str
+    id: StrId
     number: str
     area_code: str | None
     country: str
-    monthly_cost_cents: int | None
     status: str
 
     model_config = {"from_attributes": True}

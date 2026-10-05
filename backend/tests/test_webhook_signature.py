@@ -61,3 +61,48 @@ def test_future_timestamp_outside_skew_rejected():
     header = _sign(body, future_ms)
     with pytest.raises(InvalidRetellSignature):
         verify_retell_signature(body, header, API_KEY, max_skew_seconds=300)
+
+# ---------------- proven against Retell's OWN signer (retell-sdk 6.0.1, retell/lib/webhook_auth.py) ----------------
+# The vector below was produced by `symmetric["sign"](body, key, timestamp)` from Retell's official
+# Python SDK. If our verifier ever stops accepting it, real Retell webhooks would 401.
+
+OFFICIAL_BODY = (
+    '{"event":"call_ended","call":{"call_id":"call_abc123","agent_id":"agent_x","duration_ms":61499,'
+    '"note":"café — ünïcode"}}'
+).encode("utf-8")
+OFFICIAL_KEY = "key_0123456789abcdef"
+OFFICIAL_SIGNATURE = "v=1800000000000,d=042fd0d193fcac1055a884ba6717ac5376b0043f13ce62109e8303088233fcfd"
+
+
+def test_our_verifier_accepts_a_signature_made_by_retells_official_signer():
+    from app.webhooks.retell_signature import verify_retell_signature
+
+    # max_skew is huge only because the vector's timestamp is fixed in the past
+    verify_retell_signature(OFFICIAL_BODY, OFFICIAL_SIGNATURE, OFFICIAL_KEY, max_skew_seconds=10**10)
+
+
+def test_the_official_vector_is_rejected_with_the_wrong_key_or_a_changed_body():
+    from app.webhooks.retell_signature import InvalidRetellSignature, verify_retell_signature
+
+    for body, key in ((OFFICIAL_BODY, "key_not_the_webhook_key"), (OFFICIAL_BODY + b" ", OFFICIAL_KEY)):
+        with pytest.raises(InvalidRetellSignature, match="Signature mismatch"):
+            verify_retell_signature(body, OFFICIAL_SIGNATURE, key, max_skew_seconds=10**10)
+
+
+def test_a_rejected_webhook_is_a_bare_401_but_the_reason_is_logged_without_the_key(monkeypatch, caplog):
+    import logging
+
+    from fastapi.testclient import TestClient
+
+    from app.config import get_settings
+    from app.main import app
+
+    monkeypatch.setattr(get_settings(), "RETELL_API_KEY", "key_SUPERSECRET_9f3a")
+    caplog.set_level(logging.WARNING, logger="atla.webhooks.retell")
+    ts = int(__import__("time").time() * 1000)
+    resp = TestClient(app).post(
+        "/webhooks/retell", content=b'{"event":"call_ended"}', headers={"x-retell-signature": f"v={ts},d={'0' * 64}"}
+    )
+    assert resp.status_code == 401 and resp.content == b""
+    assert "Signature mismatch" in caplog.text and "api_key_last4=9f3a" in caplog.text
+    assert "SUPERSECRET" not in caplog.text

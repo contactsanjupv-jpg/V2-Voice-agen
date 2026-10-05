@@ -88,16 +88,10 @@ def require_platform_admin(user: User = Depends(get_current_user), db: Session =
     return user
 
 def has_active_subscription(db: Session, organization_id) -> bool:
-    """Single source of truth for "is this org paying" — used by every gate."""
-    from app.db.models.billing import Subscription
+    """Kept here for existing imports; the logic lives in services/billing_state."""
+    from app.services.billing_state import has_active_subscription as _has_active
 
-    subscription = (
-        db.query(Subscription)
-        .filter(Subscription.organization_id == organization_id)
-        .order_by(Subscription.created_at.desc())
-        .first()
-    )
-    return subscription is not None and subscription.status in ("trialing", "active")
+    return _has_active(db, organization_id)
 
 
 def require_active_subscription(

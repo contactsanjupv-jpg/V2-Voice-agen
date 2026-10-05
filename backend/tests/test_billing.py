@@ -35,11 +35,11 @@ def _new_org():
     return _signup(f"bill-{tag}@billing-test.com", f"Billing Org {tag}")
 
 
-def _event(event_type, sub_id, org_id, status="active", plan="starter", event_id=None):
+def _event(event_type, sub_id, org_id, status="active", plan="starter", event_id=None, at="2026-10-01T00:00:00.000000Z"):
     return {
         "event_id": event_id or f"evt_{uuid.uuid4().hex}",
         "event_type": event_type,
-        "occurred_at": "2026-10-01T00:00:00.000000Z",
+        "occurred_at": at,
         "notification_id": f"ntf_{uuid.uuid4().hex}",
         "data": {
             "id": sub_id,
@@ -76,8 +76,10 @@ def _gate(db, org_id: str):
 
 
 def _sub(db, org_id: str):
+    from app.services.billing_state import current_subscription
+
     db.rollback()
-    return db.query(Subscription).filter(Subscription.organization_id == uuid.UUID(org_id)).first()
+    return current_subscription(db, uuid.UUID(org_id))
 
 
 # ---- webhook signature ----
@@ -270,3 +272,107 @@ def test_activate_blocked_without_subscription():
         json={"agent_id": str(uuid.uuid4()), "phone_number_id": str(uuid.uuid4())},
     )
     assert resp.status_code == 402
+
+# ---------------- ordering / idempotency (Paddle is at-least-once and unordered) ----------------
+
+def test_old_event_cannot_resurrect_a_canceled_subscription(db):
+    _c, org = _new_org()
+    sub_id = f"sub_{uuid.uuid4().hex[:12]}"
+    t = lambda minute: f"2026-10-01T00:{minute:02d}:00.000000Z"
+    assert _post(_event("subscription.created", sub_id, org, at=t(1))).status_code == 204
+    assert _post(_event("subscription.canceled", sub_id, org, status="canceled", at=t(5))).status_code == 204
+    # an older "active" update is delivered late
+    assert _post(_event("subscription.updated", sub_id, org, status="active", at=t(3))).status_code == 204
+
+    sub = _sub(db, org)
+    assert sub.status == "canceled"
+    from app.services.billing_state import has_active_subscription
+
+    assert has_active_subscription(db, uuid.UUID(org)) is False
+    with pytest.raises(HTTPException):
+        _gate(db, org)
+
+
+def test_newer_event_still_applies_after_a_stale_one_was_ignored(db):
+    _c, org = _new_org()
+    sub_id = f"sub_{uuid.uuid4().hex[:12]}"
+    t = lambda minute: f"2026-10-01T00:{minute:02d}:00.000000Z"
+    _post(_event("subscription.created", sub_id, org, status="past_due", at=t(10)))
+    _post(_event("subscription.updated", sub_id, org, status="active", at=t(2)))  # stale
+    assert _sub(db, org).status == "past_due"
+    _post(_event("subscription.updated", sub_id, org, status="active", at=t(20)))  # newer
+    assert _sub(db, org).status == "active"
+
+
+def test_duplicate_delivery_changes_state_once(db):
+    _c, org = _new_org()
+    sub_id = f"sub_{uuid.uuid4().hex[:12]}"
+    evt = _event("subscription.created", sub_id, org, at="2026-10-01T00:10:00.000000Z")
+    for _ in range(3):
+        assert _post(evt).status_code == 204
+    db.rollback()
+    assert db.query(WebhookEvent).filter(WebhookEvent.external_event_id == evt["event_id"]).count() == 1
+    assert db.query(Subscription).filter(Subscription.organization_id == uuid.UUID(org)).count() == 1
+
+
+def test_event_without_occurred_at_is_rejected():
+    _c, org = _new_org()
+    evt = _event("subscription.created", f"sub_{uuid.uuid4().hex[:12]}", org)
+    del evt["occurred_at"]
+    assert _post(evt).status_code == 400
+
+
+def test_a_late_event_for_an_old_subscription_cannot_deactivate_the_current_one(db):
+    _c, org = _new_org()
+    old, new = f"sub_old{uuid.uuid4().hex[:8]}", f"sub_new{uuid.uuid4().hex[:8]}"
+    _post(_event("subscription.created", new, org, at="2026-10-02T00:00:00.000000Z"))
+    _post(_event("subscription.canceled", old, org, status="canceled", at="2026-10-01T00:00:00.000000Z"))
+    from app.services.billing_state import has_active_subscription
+
+    assert has_active_subscription(db, uuid.UUID(org)) is True
+    assert _sub(db, org).external_subscription_id == new
+
+
+# ---------------- second checkout ----------------
+
+def _count_paddle_posts(monkeypatch):
+    import app.providers.billing.paddle_billing_provider as pp
+
+    calls = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append(url)
+        return _FakeResp(201, {"data": {"id": "txn_1", "checkout": {"url": "http://localhost:3000/checkout?_ptxn=txn_1"}}})
+
+    monkeypatch.setattr(pp.httpx, "post", fake_post)
+    return calls
+
+
+@pytest.mark.parametrize("state", ["active", "trialing", "past_due", "paused"])
+def test_second_checkout_is_refused_and_creates_no_paddle_transaction(monkeypatch, state):
+    calls = _count_paddle_posts(monkeypatch)
+    c, org = _new_org()
+    _post(_event("subscription.created", f"sub_{uuid.uuid4().hex[:12]}", org, status=state))
+    resp = c.post(f"/api/v1/orgs/{org}/billing/checkout-session", json={"plan": "growth"})
+    assert resp.status_code == 409
+    assert calls == []
+
+
+def test_checkout_allowed_again_after_cancellation(monkeypatch):
+    calls = _count_paddle_posts(monkeypatch)
+    c, org = _new_org()
+    sub_id = f"sub_{uuid.uuid4().hex[:12]}"
+    _post(_event("subscription.created", sub_id, org, at="2026-10-01T00:01:00.000000Z"))
+    _post(_event("subscription.canceled", sub_id, org, status="canceled", at="2026-10-01T00:02:00.000000Z"))
+    assert c.post(f"/api/v1/orgs/{org}/billing/checkout-session", json={"plan": "starter"}).status_code == 200
+    assert len(calls) == 1
+
+
+def test_double_click_checkout_creates_one_transaction(monkeypatch):
+    from app.core.locks import redis_lock
+
+    calls = _count_paddle_posts(monkeypatch)
+    c, org = _new_org()
+    with redis_lock(f"checkout:{org}", ttl_seconds=30):  # a first request is mid-flight
+        resp = c.post(f"/api/v1/orgs/{org}/billing/checkout-session", json={"plan": "starter"})
+    assert resp.status_code == 409 and calls == []

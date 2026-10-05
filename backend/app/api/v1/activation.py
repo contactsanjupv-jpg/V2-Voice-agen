@@ -11,10 +11,14 @@ from app.config import get_settings
 from app.db.base import get_db
 from app.db.models.calls import Call, CallDirection
 from app.db.models.tenancy import OrganizationMember, OrgRole
-from app.db.models.telephony import PhoneNumber
 from app.db.models.voice_agent import Agent, AgentStatus
 from app.providers.call.retell_call_provider import RetellCallProvider
-from app.providers.phone.retell_phone_provider import RetellPhoneProvider
+from app.services.activation import (
+    ActivationBlocked,
+    ActivationNotFound,
+    ActivationUnverified,
+    activate_receptionist as activate_service,
+)
 from app.providers.retell_client import RetellAPIError
 from app.schemas.activation import ActivateRequest, ActivateResponse, TestCallResponse
 
@@ -56,6 +60,10 @@ def start_test_call(
             .scalar()
         )
         if used >= settings.FREE_TEST_CALLS_PER_ORG:
+            logger.warning(
+                "Free test allowance exhausted [org=%s]: used=%s allowed=%s (no active subscription)",
+                membership.organization_id, used, settings.FREE_TEST_CALLS_PER_ORG,
+            )
             raise HTTPException(
                 status.HTTP_402_PAYMENT_REQUIRED, "You've used your free test calls. Choose a plan to keep testing."
             )
@@ -72,9 +80,15 @@ def start_test_call(
             metadata={"organization_id": str(membership.organization_id), "agent_id": str(agent.id), "kind": "test"},
         )
     except RetellAPIError as e:
-        logger.error("Retell test call failed [agent=%s]: status=%s body=%s", agent.id, e.status_code, e.body)
+        # logger.exception records the full traceback INCLUDING the chained original
+        # error (e.g. the httpx connect/timeout error behind status=0). Server-side only.
+        logger.exception(
+            "Retell test call failed [agent=%s]: status=%s ambiguous=%s body=%s error=%s",
+            agent.id, e.status_code, e.ambiguous, e.body, e,
+        )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not start a test call with the voice provider") from e
     except RuntimeError as e:
+        logger.exception("Test call provider unavailable [agent=%s]: %s", agent.id, e)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Provider temporarily unavailable") from e
 
     # Local record up front: the Retell webhook for this call resolves against it.
@@ -106,43 +120,25 @@ def activate_receptionist(
     db: Session = Depends(get_db),
 ):
     """
-    The final onboarding step (spec §16-17): binds a phone number to an
-    agent and flips it live. Both resources are re-verified as belonging
-    to THIS org before anything is touched — the IDs in the request body
-    are never trusted on their own.
+    Goes live ONLY when the provider confirms the number routes to this agent
+    (services/activation.py). Ids in the body are re-verified against the org.
+    Safe to call repeatedly.
     """
-    agent = (
-        db.query(Agent)
-        .filter(Agent.id == uuid.UUID(payload.agent_id), Agent.organization_id == membership.organization_id)
-        .first()
-    )
-    if agent is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Agent not found")
-
-    phone_number = (
-        db.query(PhoneNumber)
-        .filter(
-            PhoneNumber.id == uuid.UUID(payload.phone_number_id),
-            PhoneNumber.organization_id == membership.organization_id,
-        )
-        .first()
-    )
-    if phone_number is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Phone number not found")
-    if agent.retell_agent_id is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Receptionist isn't configured yet")
-
-    provider = RetellPhoneProvider()
     try:
-        provider = RetellPhoneProvider()
-        provider.assign_agent(phone_number.retell_phone_number_id, agent.retell_agent_id, direction="inbound")
-    except RetellAPIError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Could not assign the number to the receptionist") from e
-    except RuntimeError as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Provider temporarily unavailable") from e
-
-    phone_number.agent_id = agent.id
-    agent.status = AgentStatus.active
-    db.commit()
-
-    return ActivateResponse(phone_number_id=str(phone_number.id), agent_id=str(agent.id), status="active")
+        agent_id, phone_id = uuid.UUID(payload.agent_id), uuid.UUID(payload.phone_number_id)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid id") from e
+    try:
+        agent = activate_service(db, membership.organization_id, agent_id, phone_id)
+    except ActivationNotFound as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Receptionist or phone number not found") from e
+    except ActivationBlocked as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, e.reason) from e
+    except ActivationUnverified as e:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, "We couldn't confirm your receptionist is connected to your number yet. Please try again."
+        ) from e
+    except (RetellAPIError, RuntimeError) as e:
+        logger.error("Activation provider error [org=%s]: %s", membership.organization_id, e)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "We couldn't reach our phone provider. Please try again.") from e
+    return ActivateResponse(phone_number_id=str(phone_id), agent_id=str(agent.id), status=agent.status.value)

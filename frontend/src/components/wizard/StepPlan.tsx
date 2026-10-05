@@ -107,8 +107,10 @@ export function StepPlan({
     } catch (err) {
       setBusyPlan(null);
       setError(
-        err instanceof ApiError && err.status === 403
-          ? "Only the account owner can choose a plan."
+        err instanceof ApiError && (err.status === 403 || err.status === 409)
+          ? err.status === 403
+            ? "Only the account owner can choose a plan."
+            : err.message
           : "Couldn't start checkout. Please try again."
       );
     }

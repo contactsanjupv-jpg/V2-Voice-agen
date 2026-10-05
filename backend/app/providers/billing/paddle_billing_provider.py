@@ -22,6 +22,10 @@ _BASE_URLS = {"sandbox": "https://sandbox-api.paddle.com", "live": "https://api.
 class PaddleAPIError(RuntimeError):
     """Subclasses RuntimeError so existing `except RuntimeError` blocks map it to a clean 502."""
 
+    def __init__(self, message: str, status_code: int = 0):
+        super().__init__(message)
+        self.status_code = status_code
+
 
 class PaddleBillingProvider(BillingProvider):
     def __init__(self):
@@ -57,22 +61,33 @@ class PaddleBillingProvider(BillingProvider):
             raise PaddleAPIError("Could not reach Paddle") from e
         if resp.status_code >= 400:
             logger.error("Paddle create-transaction failed: %s", resp.status_code)
-            raise PaddleAPIError(f"Paddle returned {resp.status_code}")
+            raise PaddleAPIError(f"Paddle returned {resp.status_code}", resp.status_code)
         data = resp.json().get("data") or {}
         url = (data.get("checkout") or {}).get("url")
         if not url or not data.get("id"):
             raise PaddleAPIError("Paddle response missing checkout URL — is a default payment link set?")
         return CheckoutSession(checkout_url=url, provider_session_id=data["id"])
 
-    def cancel_subscription(self, external_subscription_id: str) -> None:
+    def cancel_subscription(self, external_subscription_id: str, immediately: bool = False) -> None:
+        """Default is Paddle's: cancel at the end of the paid period (the customer keeps what they paid for)."""
         try:
             resp = httpx.post(
                 f"{self._base_url}/subscriptions/{external_subscription_id}/cancel",
                 headers=self._headers(),
-                json={"effective_from": "immediately"},
+                json={"effective_from": "immediately" if immediately else "next_billing_period"},
                 timeout=15.0,
             )
         except httpx.HTTPError as e:
             raise PaddleAPIError("Could not reach Paddle") from e
         if resp.status_code >= 400:
-            raise PaddleAPIError(f"Paddle returned {resp.status_code}")
+            raise PaddleAPIError(f"Paddle returned {resp.status_code}", resp.status_code)
+
+    def get_management_urls(self, external_subscription_id: str) -> dict:
+        """Paddle omits management_urls from webhooks; they come from GET /subscriptions/{id}."""
+        try:
+            resp = httpx.get(f"{self._base_url}/subscriptions/{external_subscription_id}", headers=self._headers(), timeout=15.0)
+        except httpx.HTTPError as e:
+            raise PaddleAPIError("Could not reach Paddle") from e
+        if resp.status_code >= 400:
+            raise PaddleAPIError(f"Paddle returned {resp.status_code}", resp.status_code)
+        return (resp.json().get("data") or {}).get("management_urls") or {}

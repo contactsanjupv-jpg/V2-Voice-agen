@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Mic, PhoneCall, Plus } from "lucide-react";
 import { useOrganization } from "@/lib/useOrganization";
-import { api, AgentOut, CallOut, LeadOut } from "@/lib/api";
+import { api, AgentOut, CallOut, LeadOut, UsageOut } from "@/lib/api";
 import { DashboardShell, LoadingScreen, ErrorScreen } from "@/components/dashboard/DashboardShell";
 
 export default function DashboardOverview() {
@@ -12,6 +12,7 @@ export default function DashboardOverview() {
   const [calls, setCalls] = useState<CallOut[]>([]);
   const [leads, setLeads] = useState<LeadOut[]>([]);
   const [agent, setAgent] = useState<AgentOut | null>(null);
+  const [usage, setUsage] = useState<UsageOut | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
@@ -20,8 +21,10 @@ export default function DashboardOverview() {
         api.listCalls(org.id, { limit: 5 }),
         api.listLeads(org.id, { limit: 5 }),
         api.listAgents(org.id),
+        api.getUsage(org.id),
       ])
-      .then(([callsData, leadsData, agents]) => {
+      .then(([callsData, leadsData, agents, usageData]) => {
+      setUsage(usageData);
       setCalls(callsData);
       setLeads(leadsData);
       setAgent(agents[0] ?? null);
@@ -78,7 +81,14 @@ export default function DashboardOverview() {
   </div>
 )}
 
-{!dataLoading && !agent && calls.length === 0 && leads.length === 0 && (
+{!dataLoading && agent && usage && (
+        <p className="mt-4 text-[13.5px] text-[var(--color-ink-soft)]">
+          {usage.period_start ? "This billing period" : "So far"}: {usage.calls_count} {usage.calls_count === 1 ? "call" : "calls"} handled ·{" "}
+          {Math.round(usage.billable_seconds / 60)} min
+        </p>
+      )}
+
+      {!dataLoading && !agent && calls.length === 0 && leads.length === 0 && (
         <div className="mt-10 flex flex-col items-center rounded-2xl border border-dashed border-[var(--color-line)] px-6 py-16 text-center">
           <PhoneCall className="h-8 w-8 text-[var(--color-ink-soft)]" strokeWidth={1.5} />
           <h2 className="mt-4 text-[16px] font-semibold">Set up your receptionist to get started.</h2>

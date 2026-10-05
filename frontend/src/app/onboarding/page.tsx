@@ -21,15 +21,33 @@ export default function OnboardingPage() {
   const [structuredInfo, setStructuredInfo] = useState<StructuredBusinessInfo | null>(null);
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
+  const [businessName, setBusinessName] = useState<string | null>(null);
 
+  // Progress lives on the server: refresh, close the tab, or come back from
+  // another device and we resume exactly where the saved data says you are.
   useEffect(() => {
     api
       .myOrganizations()
-      .then((orgs) => {
+      .then(async (orgs) => {
         if (orgs.length === 0) {
           setOrgLoadError("No organization found on your account.");
           return;
         }
+        const state = await api.getOnboarding(orgs[0].id);
+        if (state.step === "done") {
+          router.replace("/dashboard");
+          return;
+        }
+        setBusinessId(state.business_id);
+        setBusinessName(state.business_name);
+        if (state.structured_info) setStructuredInfo(state.structured_info);
+        if (state.agent) {
+          setAgentId(state.agent.id);
+          setVoiceId(state.agent.voice_id);
+        }
+        const stepFor = { website: 1, review: 2, voice: 3, behavior: 4, test: 5 } as const;
+        const target = state.step === "behavior" && !state.agent?.voice_id ? 3 : stepFor[state.step];
+        setStep(target);
         setOrgId(orgs[0].id);
       })
       .catch((err) => {
@@ -108,7 +126,7 @@ export default function OnboardingPage() {
         <StepBehavior
           orgId={orgId}
           businessId={businessId}
-          businessName={structuredInfo?.business_name || "Your business"}
+          businessName={businessName || structuredInfo?.business_name || "Your business"}
           voiceId={voiceId}
           onSaved={(newAgentId) => {
             setAgentId(newAgentId);
