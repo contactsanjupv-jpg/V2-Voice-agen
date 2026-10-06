@@ -19,7 +19,7 @@ const securityHeaders = [
       "frame-src 'self' https://*.paddle.com",
       "img-src 'self' data: https:",
       "media-src 'self' https:",
-      `connect-src 'self' ${API_ORIGIN} https://*.paddle.com${isDev ? " ws://localhost:*" : ""}`,
+      `connect-src 'self' ${API_ORIGIN} https://*.paddle.com https://api.retellai.com https://*.livekit.cloud wss://*.livekit.cloud${isDev ? " ws://localhost:*" : ""}`,
       "connect-src 'self' https://api.retellai.com https://*.livekit.cloud wss://*.livekit.cloud",
       "frame-ancestors 'none'",
       "base-uri 'self'",
