@@ -3,6 +3,18 @@ import type { NextConfig } from "next";
 const API_ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 const isDev = process.env.NODE_ENV !== "production";
 
+// One connect-src only. Browsers honor the first duplicate directive and
+// ignore the rest, so everything the app connects to must be listed here.
+const connectSrc = [
+  "'self'",
+  API_ORIGIN,
+  "https://*.paddle.com",
+  "https://api.retellai.com",
+  "https://*.livekit.cloud",
+  "wss://*.livekit.cloud",
+  ...(isDev ? ["ws://localhost:*"] : []),
+].join(" ");
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -12,15 +24,14 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-        isDev
+      isDev
         ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.paddle.com"
         : "script-src 'self' https://cdn.paddle.com",
       "style-src 'self' 'unsafe-inline' https://*.paddle.com",
       "frame-src 'self' https://*.paddle.com",
       "img-src 'self' data: https:",
       "media-src 'self' https:",
-      `connect-src 'self' ${API_ORIGIN} https://*.paddle.com https://api.retellai.com https://*.livekit.cloud wss://*.livekit.cloud${isDev ? " ws://localhost:*" : ""}`,
-      "connect-src 'self' https://api.retellai.com https://*.livekit.cloud wss://*.livekit.cloud",
+      `connect-src ${connectSrc}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
