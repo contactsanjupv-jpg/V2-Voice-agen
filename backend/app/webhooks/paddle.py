@@ -7,7 +7,6 @@ import hmac
 import json
 import logging
 import time
-import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Request, Response, status
@@ -16,9 +15,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.base import get_db
-from app.db.models.billing import Subscription
 from app.db.models.platform import WebhookEvent, WebhookSource
-from app.db.models.tenancy import Organization
+from app.services.subscription_sync import parse_dt as _parse_dt
+from app.services.subscription_sync import sync_subscription as _sync_subscription
 
 router = APIRouter()
 settings = get_settings()
@@ -112,73 +111,3 @@ async def handle_paddle_webhook(
         return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-def _parse_uuid(value) -> uuid.UUID | None:
-    try:
-        return uuid.UUID(str(value))
-    except (ValueError, TypeError):
-        return None
-
-
-def _parse_dt(value) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def _sync_subscription(db: Session, data: dict, occurred_at: datetime) -> None:
-    """
-    One local row per Paddle subscription id. Paddle delivers at-least-once and
-    may deliver out of order, so every event carries `occurred_at` and an event
-    older than the newest one already applied to that subscription is ignored —
-    an old `active` can never resurrect a `canceled` subscription.
-    """
-    external_id = data.get("id")
-    new_status = data.get("status")
-    custom = data.get("custom_data") or {}
-    if not external_id or not new_status:
-        logger.error("Paddle subscription event missing id/status")
-        return
-
-    subscription = (
-        db.query(Subscription)
-        .filter(Subscription.billing_provider == "paddle", Subscription.external_subscription_id == external_id)
-        .with_for_update()
-        .first()
-    )
-    if subscription is None:
-        org_id = _parse_uuid(custom.get("organization_id"))
-        if org_id is None or db.get(Organization, org_id) is None:
-            logger.error("Paddle subscription %s has no valid organization_id in custom_data", external_id)
-            return
-        subscription = Subscription(
-            organization_id=org_id,
-            billing_provider="paddle",
-            external_subscription_id=external_id,
-            plan_id=custom.get("plan_id") or "unknown",
-            status=new_status,
-            status_changed_at=occurred_at,
-        )
-        db.add(subscription)
-    else:
-        if subscription.last_event_at is not None and occurred_at < subscription.last_event_at:
-            logger.warning("Ignoring stale Paddle event for %s (%s < %s)", external_id, occurred_at, subscription.last_event_at)
-            return
-        if subscription.status != new_status:
-            subscription.status_changed_at = occurred_at
-        subscription.status = new_status
-
-    subscription.last_event_at = occurred_at
-    scheduled = data.get("scheduled_change") if isinstance(data.get("scheduled_change"), dict) else None
-    subscription.cancel_effective_at = (
-        _parse_dt(scheduled.get("effective_at")) if scheduled and scheduled.get("action") == "cancel" else None
-    )
-    if custom.get("plan_id"):
-        subscription.plan_id = custom["plan_id"]
-    period = data.get("current_billing_period") or {}
-    subscription.current_period_start = _parse_dt(period.get("starts_at")) or subscription.current_period_start
-    subscription.current_period_end = _parse_dt(period.get("ends_at")) or subscription.current_period_end

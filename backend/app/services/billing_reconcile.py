@@ -1,0 +1,129 @@
+"""
+Paddle <-> database reconciliation. Webhooks are at-least-once but a delivery can
+still be lost (endpoint down, ngrok restarted, 500s past Paddle's retry window).
+This compares each local, non-canceled Paddle subscription with Paddle's own
+view and reports drift.
+
+Safety rules:
+* Default is REPORT ONLY. `apply=True` repairs through the same stale-safe path
+  the webhook uses (services/subscription_sync), with Paddle's `updated_at` as
+  the snapshot time, so a repair can never overwrite newer local state.
+* Never creates a subscription, never deletes one, never touches a subscription
+  Paddle says doesn't exist (reported for a human).
+* Idempotent: running it twice changes nothing the second time.
+* Also reports orgs holding more than one trialing/active subscription (e.g. two
+  checkouts both paid) — money the customer is being charged twice; a human
+  decides which to cancel.
+"""
+import logging
+from dataclasses import dataclass, field
+from datetime import timezone
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.db.models.billing import Subscription
+from app.services.billing_state import ACTIVE_STATUSES
+from app.services.plans import plan_id_from_items
+from app.services.subscription_sync import parse_dt, sync_subscription
+
+logger = logging.getLogger("atla.billing_reconcile")
+
+
+@dataclass
+class Drift:
+    external_subscription_id: str
+    organization_id: str
+    differences: dict[str, tuple]  # field -> (local, paddle)
+    repaired: bool = False
+    note: str = ""
+
+
+@dataclass
+class ReconcileReport:
+    checked: int = 0
+    in_sync: int = 0
+    drifted: list[Drift] = field(default_factory=list)
+    missing_at_paddle: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    duplicate_active_orgs: list[str] = field(default_factory=list)
+
+
+def _utc(dt):
+    if dt is None:
+        return None
+    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _differences(local: Subscription, remote: dict) -> dict[str, tuple]:
+    diffs: dict[str, tuple] = {}
+    if remote.get("status") and local.status != remote["status"]:
+        diffs["status"] = (local.status, remote["status"])
+    remote_plan = plan_id_from_items(remote.get("items"))
+    if remote_plan is not None and local.plan_id != remote_plan:
+        diffs["plan"] = (local.plan_id, remote_plan)
+    period_end = parse_dt((remote.get("current_billing_period") or {}).get("ends_at"))
+    if period_end is not None and _utc(local.current_period_end) != _utc(period_end):
+        diffs["period_end"] = (local.current_period_end, period_end)
+    scheduled = remote.get("scheduled_change") if isinstance(remote.get("scheduled_change"), dict) else None
+    remote_cancel = parse_dt(scheduled.get("effective_at")) if scheduled and scheduled.get("action") == "cancel" else None
+    if _utc(local.cancel_effective_at) != _utc(remote_cancel):
+        diffs["cancel_effective_at"] = (local.cancel_effective_at, remote_cancel)
+    return diffs
+
+
+def reconcile_subscriptions(db: Session, provider, apply: bool = False) -> ReconcileReport:
+    report = ReconcileReport()
+
+    dupes = (
+        db.query(Subscription.organization_id)
+        .filter(Subscription.billing_provider == "paddle", Subscription.status.in_(ACTIVE_STATUSES))
+        .group_by(Subscription.organization_id)
+        .having(func.count(Subscription.id) > 1)
+        .all()
+    )
+    report.duplicate_active_orgs = [str(row[0]) for row in dupes]
+
+    rows = (
+        db.query(Subscription)
+        .filter(
+            Subscription.billing_provider == "paddle",
+            Subscription.external_subscription_id.isnot(None),
+            Subscription.status != "canceled",  # terminal in Paddle: nothing to repair
+        )
+        .order_by(Subscription.created_at)
+        .all()
+    )
+    for local in rows:
+        external_id = local.external_subscription_id
+        report.checked += 1
+        try:
+            remote = provider.get_subscription(external_id)
+        except Exception as e:  # noqa: BLE001 — one failure must not stop the sweep
+            logger.error("Reconcile: could not read %s from Paddle: %s", external_id, e)
+            report.errors.append(external_id)
+            continue
+        if remote is None:
+            report.missing_at_paddle.append(external_id)
+            continue
+        diffs = _differences(local, remote)
+        if not diffs:
+            report.in_sync += 1
+            continue
+        drift = Drift(external_id, str(local.organization_id), diffs)
+        if apply:
+            snapshot_at = parse_dt(remote.get("updated_at"))
+            if snapshot_at is None:
+                drift.note = "not repaired: Paddle snapshot has no updated_at"
+            else:
+                try:
+                    drift.repaired = sync_subscription(db, remote, snapshot_at)
+                    db.commit()
+                    if not drift.repaired:
+                        drift.note = "not repaired: local state is newer than Paddle's snapshot"
+                except Exception:  # noqa: BLE001
+                    db.rollback()
+                    logger.exception("Reconcile: repair failed for %s", external_id)
+                    drift.note = "repair failed"
+        report.drifted.append(drift)
+    return report

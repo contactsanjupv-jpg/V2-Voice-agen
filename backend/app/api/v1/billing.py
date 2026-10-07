@@ -12,8 +12,8 @@ from app.auth.deps import current_membership, get_current_user, require_role
 from app.config import get_settings
 from app.core.locks import LockNotAcquired, redis_lock
 from app.services.billing_state import current_subscription, has_blocking_subscription
+from app.services.plans import PLANS, price_id_for_plan
 from app.db.base import get_db
-from app.db.models.billing import Subscription
 from app.db.models.tenancy import OrganizationMember, OrgRole, User
 from app.providers.billing.paddle_billing_provider import PaddleBillingProvider
 from app.schemas.billing import CreateCheckoutSessionRequest, CreateCheckoutSessionResponse, SubscriptionOut
@@ -22,10 +22,6 @@ router = APIRouter(prefix="/api/v1/orgs/{organization_id}/billing", tags=["billi
 settings = get_settings()
 logger = logging.getLogger("atla.billing")
 
-_PLAN_PRICE_IDS = {
-    "starter": lambda s: s.PADDLE_STARTER_PRICE_ID,
-    "growth": lambda s: s.PADDLE_GROWTH_PRICE_ID,
-}
 
 
 @router.get("/subscription", response_model=SubscriptionOut | None)
@@ -48,10 +44,9 @@ def create_checkout_session(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "You already have a subscription. Manage it from your billing settings."
         )
-    price_id_getter = _PLAN_PRICE_IDS.get(payload.plan)
-    if price_id_getter is None:
+    if payload.plan not in PLANS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown plan: {payload.plan}")
-    price_id = price_id_getter(settings)
+    price_id = price_id_for_plan(payload.plan)
     if not price_id:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Billing is temporarily unavailable")
 

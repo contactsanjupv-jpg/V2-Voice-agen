@@ -91,3 +91,15 @@ class PaddleBillingProvider(BillingProvider):
         if resp.status_code >= 400:
             raise PaddleAPIError(f"Paddle returned {resp.status_code}", resp.status_code)
         return (resp.json().get("data") or {}).get("management_urls") or {}
+
+    def get_subscription(self, external_subscription_id: str) -> dict | None:
+        """Paddle's current view of one subscription; None if Paddle has no such subscription."""
+        try:
+            resp = httpx.get(f"{self._base_url}/subscriptions/{external_subscription_id}", headers=self._headers(), timeout=15.0)
+        except httpx.HTTPError as e:
+            raise PaddleAPIError("Could not reach Paddle") from e
+        if resp.status_code == 404:
+            return None
+        if resp.status_code >= 400:
+            raise PaddleAPIError(f"Paddle returned {resp.status_code}", resp.status_code)
+        return resp.json().get("data") or None

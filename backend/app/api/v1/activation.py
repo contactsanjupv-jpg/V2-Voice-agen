@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth.deps import current_membership, has_active_subscription, require_active_subscription, require_role
+from app.auth.deps import current_membership, has_active_subscription, require_feature, require_role
 from app.auth.rate_limit import RateLimitExceeded, check_rate_limit
 from app.config import get_settings
+from app.services.plans import Feature
 from app.db.base import get_db
 from app.db.models.calls import Call, CallDirection
 from app.db.models.tenancy import OrganizationMember, OrgRole
@@ -116,7 +117,7 @@ def start_test_call(
 def activate_receptionist(
     payload: ActivateRequest,
     membership: OrganizationMember = Depends(require_role(OrgRole.admin)),
-    _subscribed: OrganizationMember = Depends(require_active_subscription),
+    _subscribed: OrganizationMember = Depends(require_feature(Feature.go_live)),
     db: Session = Depends(get_db),
 ):
     """

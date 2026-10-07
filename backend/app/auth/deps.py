@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth.sessions import read_session
 from app.config import get_settings
 from app.db.base import get_db
-from app.db.models.tenancy import Organization, OrganizationMember, OrgRole, User, role_at_least
+from app.db.models.tenancy import OrganizationMember, OrgRole, User, role_at_least
 
 settings = get_settings()
 
@@ -110,3 +110,34 @@ def require_active_subscription(
             "An active subscription is required for this action. Please choose a plan to continue.",
         )
     return membership
+
+
+def require_feature(feature):
+    """
+    Server-side plan gate. Passes only when the org has a trialing/active
+    subscription whose plan includes `feature` (services/plans.py). The frontend
+    is never the authority; a customer calling the endpoint directly gets 402.
+    """
+    from app.services.plans import UNKNOWN_PLAN, active_plan, lowest_plan_with  # noqa: F401
+
+    def _dependency(
+        membership: OrganizationMember = Depends(current_membership),
+        db: Session = Depends(get_db),
+    ) -> OrganizationMember:
+        if not has_active_subscription(db, membership.organization_id):
+            raise HTTPException(
+                status.HTTP_402_PAYMENT_REQUIRED,
+                "An active subscription is required for this action. Please choose a plan to continue.",
+            )
+        plan = active_plan(db, membership.organization_id)
+        if plan is None or feature not in plan.features:
+            needed = lowest_plan_with(feature)
+            message = (
+                f"Your plan doesn't include this feature. Upgrade to {needed.id.title()}."
+                if needed is not None and plan is not None
+                else "Your plan doesn't include this feature."
+            )
+            raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, message)
+        return membership
+
+    return _dependency

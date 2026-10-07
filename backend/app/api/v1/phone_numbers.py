@@ -4,9 +4,10 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.deps import current_membership, require_active_subscription, require_role
+from app.auth.deps import current_membership, require_feature, require_role
 from app.auth.rate_limit import RateLimitExceeded, check_rate_limit
 from app.config import get_settings
+from app.services.plans import Feature
 from app.db.base import get_db
 from app.db.models.telephony import PhoneNumber, PhoneNumberStatus
 from app.db.models.tenancy import OrganizationMember, OrgRole
@@ -44,7 +45,7 @@ def list_phone_numbers(
 def purchase_phone_number(
     payload: PurchaseNumberRequest,
     membership: OrganizationMember = Depends(require_role(OrgRole.admin)),
-    _subscribed: OrganizationMember = Depends(require_active_subscription),
+    _subscribed: OrganizationMember = Depends(require_feature(Feature.phone_number)),
     db: Session = Depends(get_db),
 ):
     """
