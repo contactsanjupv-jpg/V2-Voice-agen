@@ -9,6 +9,7 @@ from app.auth.deps import current_membership, has_active_subscription, require_f
 from app.auth.rate_limit import RateLimitExceeded, check_rate_limit
 from app.config import get_settings
 from app.services.plans import Feature
+from app.services.plans import Feature
 from app.db.base import get_db
 from app.db.models.calls import Call, CallDirection
 from app.db.models.tenancy import OrganizationMember, OrgRole

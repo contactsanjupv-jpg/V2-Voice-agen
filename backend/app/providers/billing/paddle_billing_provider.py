@@ -56,7 +56,12 @@ class PaddleBillingProvider(BillingProvider):
             "custom_data": {"organization_id": organization_id, "plan_id": plan_id},
         }
         try:
-            resp = httpx.post(f"{self._base_url}/transactions", headers=self._headers(), json=body, timeout=15.0)
+            resp = httpx.post(
+                f"{self._base_url}/transactions",
+                headers=self._headers(),
+                json=body,
+                timeout=15.0,
+            )
         except httpx.HTTPError as e:
             raise PaddleAPIError("Could not reach Paddle") from e
         if resp.status_code >= 400:
@@ -85,7 +90,11 @@ class PaddleBillingProvider(BillingProvider):
     def get_management_urls(self, external_subscription_id: str) -> dict:
         """Paddle omits management_urls from webhooks; they come from GET /subscriptions/{id}."""
         try:
-            resp = httpx.get(f"{self._base_url}/subscriptions/{external_subscription_id}", headers=self._headers(), timeout=15.0)
+            resp = httpx.get(
+                f"{self._base_url}/subscriptions/{external_subscription_id}",
+                headers=self._headers(),
+                timeout=15.0,
+            )
         except httpx.HTTPError as e:
             raise PaddleAPIError("Could not reach Paddle") from e
         if resp.status_code >= 400:
@@ -95,7 +104,27 @@ class PaddleBillingProvider(BillingProvider):
     def get_subscription(self, external_subscription_id: str) -> dict | None:
         """Paddle's current view of one subscription; None if Paddle has no such subscription."""
         try:
-            resp = httpx.get(f"{self._base_url}/subscriptions/{external_subscription_id}", headers=self._headers(), timeout=15.0)
+            resp = httpx.get(
+                f"{self._base_url}/subscriptions/{external_subscription_id}",
+                headers=self._headers(),
+                timeout=15.0,
+            )
+        except httpx.HTTPError as e:
+            raise PaddleAPIError("Could not reach Paddle") from e
+        if resp.status_code == 404:
+            return None
+        if resp.status_code >= 400:
+            raise PaddleAPIError(f"Paddle returned {resp.status_code}", resp.status_code)
+        return resp.json().get("data") or None
+
+    def get_price(self, price_id: str) -> dict | None:
+        """Paddle's price entity (amount, currency, billing cycle); None if Paddle has no such price."""
+        try:
+            resp = httpx.get(
+                f"{self._base_url}/prices/{price_id}",
+                headers=self._headers(),
+                timeout=15.0,
+            )
         except httpx.HTTPError as e:
             raise PaddleAPIError("Could not reach Paddle") from e
         if resp.status_code == 404:

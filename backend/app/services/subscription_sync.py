@@ -81,6 +81,14 @@ def sync_subscription(db: Session, data: dict, occurred_at: datetime) -> bool:
         if subscription.last_event_at is not None and occurred_at < subscription.last_event_at:
             logger.warning("Ignoring stale Paddle snapshot for %s (%s < %s)", external_id, occurred_at, subscription.last_event_at)
             return False
+        if (
+            subscription.status == "canceled"
+            and new_status != "canceled"
+            and subscription.last_event_at is not None
+            and occurred_at <= subscription.last_event_at
+        ):
+            logger.warning("Ignoring non-canceled snapshot for already-canceled subscription %s", external_id)
+            return False
         if subscription.status != new_status:
             subscription.status_changed_at = occurred_at
         subscription.status = new_status

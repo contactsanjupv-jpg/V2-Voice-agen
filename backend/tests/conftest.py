@@ -58,3 +58,25 @@ def _reset_rate_limits():
     for key in r.scan_iter("ratelimit:*"):
         r.delete(key)
     yield
+    
+class RecordingBillingProvider:
+    """Stands in for PaddleBillingProvider inside the duplicate-subscription guard so tests never
+    reach the real Paddle API. `cancelled` records (subscription_id, immediately) requests."""
+
+    cancelled: list = []
+    fail: bool = False
+
+    def cancel_subscription(self, external_subscription_id, immediately=False):
+        if type(self).fail:
+            raise RuntimeError("paddle down")
+        type(self).cancelled.append((external_subscription_id, immediately))
+
+
+@pytest.fixture(autouse=True)
+def _guard_never_calls_real_paddle(monkeypatch):
+    from app.services import duplicate_subscriptions
+
+    RecordingBillingProvider.cancelled = []
+    RecordingBillingProvider.fail = False
+    monkeypatch.setattr(duplicate_subscriptions, "PaddleBillingProvider", RecordingBillingProvider)
+    yield RecordingBillingProvider

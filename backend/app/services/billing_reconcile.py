@@ -11,11 +11,12 @@ Safety rules:
 * Never creates a subscription, never deletes one, never touches a subscription
   Paddle says doesn't exist (reported for a human).
 * Idempotent: running it twice changes nothing the second time.
-* Also reports orgs holding more than one trialing/active subscription (e.g. two
-  checkouts both paid) — money the customer is being charged twice; a human
-  decides which to cancel.
+* Also finds orgs holding more than one trialing/active subscription (two paid
+  checkouts). Report-only just lists them; --apply schedules the NEWER ones to
+  cancel at period end (services/duplicate_subscriptions). Refunds stay manual.
 """
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import timezone
 
@@ -24,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.billing import Subscription
 from app.services.billing_state import ACTIVE_STATUSES
+from app.services.duplicate_subscriptions import schedule_duplicate_cancellations
 from app.services.plans import plan_id_from_items
 from app.services.subscription_sync import parse_dt, sync_subscription
 
@@ -47,6 +49,7 @@ class ReconcileReport:
     missing_at_paddle: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     duplicate_active_orgs: list[str] = field(default_factory=list)
+    duplicate_cancels_requested: list[str] = field(default_factory=list)
 
 
 def _utc(dt):
@@ -74,15 +77,6 @@ def _differences(local: Subscription, remote: dict) -> dict[str, tuple]:
 
 def reconcile_subscriptions(db: Session, provider, apply: bool = False) -> ReconcileReport:
     report = ReconcileReport()
-
-    dupes = (
-        db.query(Subscription.organization_id)
-        .filter(Subscription.billing_provider == "paddle", Subscription.status.in_(ACTIVE_STATUSES))
-        .group_by(Subscription.organization_id)
-        .having(func.count(Subscription.id) > 1)
-        .all()
-    )
-    report.duplicate_active_orgs = [str(row[0]) for row in dupes]
 
     rows = (
         db.query(Subscription)
@@ -126,4 +120,17 @@ def reconcile_subscriptions(db: Session, provider, apply: bool = False) -> Recon
                     logger.exception("Reconcile: repair failed for %s", external_id)
                     drift.note = "repair failed"
         report.drifted.append(drift)
+    dupes = (
+        db.query(Subscription.organization_id)
+        .filter(Subscription.billing_provider == "paddle", Subscription.status.in_(ACTIVE_STATUSES))
+        .group_by(Subscription.organization_id)
+        .having(func.count(Subscription.id) > 1)
+        .all()
+    )
+    report.duplicate_active_orgs = [str(row[0]) for row in dupes]
+    if apply:
+        for org in report.duplicate_active_orgs:
+            report.duplicate_cancels_requested += schedule_duplicate_cancellations(
+                db, uuid.UUID(org), provider_factory=lambda: provider
+            )
     return report

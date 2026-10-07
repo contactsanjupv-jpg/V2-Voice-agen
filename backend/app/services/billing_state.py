@@ -25,7 +25,9 @@ def has_blocking_subscription(db: Session, organization_id: uuid.UUID) -> bool:
 
 
 def current_subscription(db: Session, organization_id: uuid.UUID) -> Subscription | None:
-    """The paying subscription if there is one, otherwise the most recent row."""
+    """The paying subscription if there is one, otherwise the most recent row.
+    If an org ever holds two active rows (a duplicate purchase), the OLDEST is the
+    one that counts — the same one services/duplicate_subscriptions keeps."""
     q = _org_subscriptions(db, organization_id)
-    active = q.filter(Subscription.status.in_(ACTIVE_STATUSES)).order_by(Subscription.created_at.desc()).first()
+    active = q.filter(Subscription.status.in_(ACTIVE_STATUSES)).order_by(Subscription.created_at.asc(), Subscription.id.asc()).first()
     return active or q.order_by(Subscription.created_at.desc()).first()

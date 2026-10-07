@@ -34,7 +34,9 @@ def main() -> int:
     for sid in report.missing_at_paddle:
         print(f"  MISSING AT PADDLE {sid} — not changed; review manually")
     for oid in report.duplicate_active_orgs:
-        print(f"  DUPLICATE ACTIVE SUBSCRIPTIONS for org {oid} — customer may be charged twice; review manually")
+        print(f"  DUPLICATE ACTIVE SUBSCRIPTIONS for org {oid} — customer may be charged twice; review a refund")
+    for sid in report.duplicate_cancels_requested:
+        print(f"  CANCEL AT PERIOD END requested for duplicate subscription {sid}")
     return 1 if (report.drifted and not args.apply) or report.duplicate_active_orgs else 0
 
 

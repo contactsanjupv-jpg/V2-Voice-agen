@@ -57,8 +57,8 @@ def tiered_plans(monkeypatch):
     """Registers a Growth-only feature for the test so the Starter/Growth matrix is exercised for real."""
     starter_only, growth_only = "x_starter_feature", "x_growth_feature"
     base = set(plans.STARTER_FEATURES)
-    monkeypatch.setitem(PLANS, "starter", Plan("starter", 1, frozenset(base | {starter_only})))
-    monkeypatch.setitem(PLANS, "growth", Plan("growth", 2, frozenset(base | {starter_only, growth_only})))
+    monkeypatch.setitem(PLANS, "starter", Plan("starter", "Starter", 1, frozenset(base | {starter_only})))
+    monkeypatch.setitem(PLANS, "growth", Plan("growth", "Growth", 2, frozenset(base | {starter_only, growth_only})))
     return starter_only, growth_only
 
 

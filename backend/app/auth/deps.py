@@ -87,6 +87,7 @@ def require_platform_admin(user: User = Depends(get_current_user), db: Session =
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
     return user
 
+
 def has_active_subscription(db: Session, organization_id) -> bool:
     """Kept here for existing imports; the logic lives in services/billing_state."""
     from app.services.billing_state import has_active_subscription as _has_active
@@ -118,7 +119,7 @@ def require_feature(feature):
     subscription whose plan includes `feature` (services/plans.py). The frontend
     is never the authority; a customer calling the endpoint directly gets 402.
     """
-    from app.services.plans import UNKNOWN_PLAN, active_plan, lowest_plan_with  # noqa: F401
+    from app.services.plans import active_plan, lowest_plan_with
 
     def _dependency(
         membership: OrganizationMember = Depends(current_membership),
@@ -133,7 +134,7 @@ def require_feature(feature):
         if plan is None or feature not in plan.features:
             needed = lowest_plan_with(feature)
             message = (
-                f"Your plan doesn't include this feature. Upgrade to {needed.id.title()}."
+                f"Your plan doesn't include this feature. Upgrade to {needed.name}."
                 if needed is not None and plan is not None
                 else "Your plan doesn't include this feature."
             )

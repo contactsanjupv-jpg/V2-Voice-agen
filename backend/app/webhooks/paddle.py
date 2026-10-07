@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.base import get_db
 from app.db.models.platform import WebhookEvent, WebhookSource
+from app.services.duplicate_subscriptions import after_subscription_applied
 from app.services.subscription_sync import parse_dt as _parse_dt
 from app.services.subscription_sync import sync_subscription as _sync_subscription
 
@@ -110,4 +111,6 @@ async def handle_paddle_webhook(
         logger.exception("Paddle webhook processing failed: %s", event_id)
         return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    if event_type in _SUBSCRIPTION_EVENTS:
+        after_subscription_applied(db, data)  # post-commit, never raises
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -12,6 +12,7 @@ from app.auth.deps import current_membership, get_current_user, require_role
 from app.config import get_settings
 from app.core.locks import LockNotAcquired, redis_lock
 from app.services.billing_state import current_subscription, has_blocking_subscription
+from app.services.checkout_guard import get_pending, set_pending
 from app.services.plans import PLANS, price_id_for_plan
 from app.db.base import get_db
 from app.db.models.tenancy import OrganizationMember, OrgRole, User
@@ -53,6 +54,16 @@ def create_checkout_session(
     try:
         # Lock so a double-click can't create two Paddle transactions.
         with redis_lock(f"checkout:{membership.organization_id}", ttl_seconds=30):
+            pending = get_pending(membership.organization_id)
+            if pending is not None:
+                # One open checkout per org: same plan -> same link (no second Paddle transaction);
+                # another plan -> refuse, because paying both would create two subscriptions.
+                if pending["plan"] == payload.plan:
+                    return CreateCheckoutSessionResponse(checkout_url=pending["checkout_url"])
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "You already have a checkout open for another plan. Finish it, or try again in a few minutes.",
+                )
             provider = PaddleBillingProvider()
             session = provider.create_checkout_session(
                 organization_id=str(membership.organization_id),
@@ -68,6 +79,7 @@ def create_checkout_session(
         logger.error("Checkout failed: %s", e)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Billing is temporarily unavailable") from e
 
+    set_pending(membership.organization_id, payload.plan, session.checkout_url)
     return CreateCheckoutSessionResponse(checkout_url=session.checkout_url)
 
 class ManageOut(BaseModel):

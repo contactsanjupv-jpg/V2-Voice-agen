@@ -22,6 +22,10 @@ class FakePaddle:
     def __init__(self, snapshots=None, fail_ids=()):
         self.snapshots = snapshots or {}
         self.fail_ids = set(fail_ids)
+        self.cancelled = []
+
+    def cancel_subscription(self, sid, immediately=False):
+        self.cancelled.append((sid, immediately))
 
     def get_subscription(self, sid):
         if sid in self.fail_ids:
@@ -126,9 +130,23 @@ def test_one_provider_failure_does_not_stop_the_sweep(db):
     assert _mine(report, good)[0].repaired
 
 
-def test_duplicate_active_subscriptions_are_flagged(db):
+def test_duplicate_active_subscriptions_are_flagged_and_only_cancelled_on_apply(db, _guard_never_calls_real_paddle):
     _c, org = _new_org()
-    _post(_ev("subscription.created", f"sub_{uuid.uuid4().hex[:12]}", org, "pri_starter"))
-    _post(_ev("subscription.created", f"sub_{uuid.uuid4().hex[:12]}", org, "pri_starter"))
-    report = reconcile_subscriptions(db, FakePaddle({}))
+    first, second = f"sub_{uuid.uuid4().hex[:12]}", f"sub_{uuid.uuid4().hex[:12]}"
+    _post(_ev("subscription.created", first, org, "pri_starter", at="2026-10-01T00:00:00Z"))
+    _post(_ev("subscription.created", second, org, "pri_starter", at="2026-10-01T00:00:05Z"))
+    _guard_never_calls_real_paddle.cancelled.clear()  # the webhook guard already acted; isolate reconcile's behaviour
+
+    paddle = FakePaddle({})
+    report = reconcile_subscriptions(db, paddle, apply=False)
     assert org in report.duplicate_active_orgs
+    assert paddle.cancelled == [] and report.duplicate_cancels_requested == []  # report-only never acts
+
+    from app.services import duplicate_subscriptions as ds
+
+    ds._redis.delete(f"dup-cancel:{second}")  # the webhook guard already requested it; let reconcile do it once
+    applied = reconcile_subscriptions(db, paddle, apply=True)
+    assert applied.duplicate_cancels_requested == [second]
+    assert paddle.cancelled == [(second, False)]  # the NEWER one, at period end
+    reconcile_subscriptions(db, paddle, apply=True)
+    assert paddle.cancelled == [(second, False)]  # idempotent: not requested twice

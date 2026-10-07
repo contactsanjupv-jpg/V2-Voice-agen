@@ -14,6 +14,8 @@ COMMERCIAL DECISIONS THAT ARE NOT MADE YET (do not invent them in code):
     Growth-only. Add a Feature member, list it in GROWTH_ONLY, and wrap the
     route in require_feature(Feature.x) — nothing else changes.
   - included_minutes is None (= not enforced) for both plans.
+  - The displayed PRICE is never stored here: it is read from the Paddle price
+    behind each plan (services/plan_pricing.py), so it cannot drift from billing.
 """
 import logging
 import uuid
@@ -35,6 +37,11 @@ class Feature(str, Enum):
     go_live = "go_live"  # route real calls to the receptionist (costs us money)
 
 
+FEATURE_LABELS: dict[Feature, str] = {
+    Feature.phone_number: "A dedicated business phone number",
+    Feature.go_live: "Your receptionist answers real calls",
+}
+
 STARTER_FEATURES: frozenset[Feature] = frozenset({Feature.phone_number, Feature.go_live})
 GROWTH_ONLY_FEATURES: frozenset[Feature] = frozenset()
 
@@ -42,14 +49,15 @@ GROWTH_ONLY_FEATURES: frozenset[Feature] = frozenset()
 @dataclass(frozen=True)
 class Plan:
     id: str
+    name: str  # customer-facing
     rank: int
     features: frozenset[Feature]
     included_minutes: int | None = None  # None = not enforced (pricing decision pending)
 
 
 PLANS: dict[str, Plan] = {
-    "starter": Plan("starter", 1, STARTER_FEATURES),
-    "growth": Plan("growth", 2, STARTER_FEATURES | GROWTH_ONLY_FEATURES),
+    "starter": Plan("starter", "Starter", 1, STARTER_FEATURES),
+    "growth": Plan("growth", "Growth", 2, STARTER_FEATURES | GROWTH_ONLY_FEATURES),
 }
 
 _PRICE_SETTING = {"starter": "PADDLE_STARTER_PRICE_ID", "growth": "PADDLE_GROWTH_PRICE_ID"}
