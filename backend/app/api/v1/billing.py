@@ -12,6 +12,7 @@ from app.auth.deps import current_membership, get_current_user, require_role
 from app.config import get_settings
 from app.core.locks import LockNotAcquired, redis_lock
 from app.services.billing_state import current_subscription, has_blocking_subscription
+from app.services.billing_status import subscription_view
 from app.services.checkout_guard import get_pending, set_pending
 from app.services.plans import PLANS, price_id_for_plan
 from app.db.base import get_db
@@ -30,8 +31,7 @@ def get_subscription(
     membership: OrganizationMember = Depends(current_membership),
     db: Session = Depends(get_db),
 ):
-    subscription = current_subscription(db, membership.organization_id)
-    return SubscriptionOut.model_validate(subscription) if subscription else None
+    return subscription_view(db, membership.organization_id)
 
 
 @router.post("/checkout-session", response_model=CreateCheckoutSessionResponse)

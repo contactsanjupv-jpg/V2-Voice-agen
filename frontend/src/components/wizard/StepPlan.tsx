@@ -3,17 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { CheckoutEventNames, initializePaddle, type Paddle } from "@paddle/paddle-js";
-import { api, ApiError, SubscriptionOut } from "@/lib/api";
+import { api, describeError, SubscriptionOut } from "@/lib/api";
+import { formatPrice } from "@/lib/billing";
+import { usePlans } from "@/lib/usePlans";
 import { WizardActions, ErrorBanner } from "./WizardShell";
 
-// Display prices only — the real charge comes from the Paddle price IDs
-// configured on the backend. Keep these in sync with your Paddle prices.
-const PLANS = [
-  { id: "starter", name: "Starter", price: "$79" },
-  { id: "growth", name: "Growth", price: "$199" },
-] as const;
-
-const ACTIVE_STATUSES = ["active", "trialing"];
+// Plan names, features and prices come from the backend plan catalog (backed by
+// the Paddle prices) — nothing about plans is hardcoded in this file.
 const PADDLE_TOKEN = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN;
 const PADDLE_ENV = process.env.NEXT_PUBLIC_PADDLE_ENV === "live" ? "production" : "sandbox";
 
@@ -33,7 +29,10 @@ export function StepPlan({
   const [error, setError] = useState<string | null>(null);
   const paddleRef = useRef<Promise<Paddle | undefined> | null>(null);
 
-  const isActive = subscription !== null && ACTIVE_STATUSES.includes(subscription.status);
+  const { plans, loading: plansLoading, failed: plansFailed, reload: reloadPlans } = usePlans();
+
+  // `entitled` is the server's verdict; the browser never decides who has paid.
+  const isActive = subscription !== null && subscription.entitled;
 
   useEffect(() => {
     api
@@ -54,7 +53,7 @@ export function StepPlan({
         try {
           const sub = await api.getSubscription(orgId);
           if (cancelled) return;
-          if (sub && ACTIVE_STATUSES.includes(sub.status)) {
+          if (sub && sub.entitled) {
             setSubscription(sub);
             setWaiting(false);
             return;
@@ -106,13 +105,7 @@ export function StepPlan({
       paddle.Checkout.open({ transactionId });
     } catch (err) {
       setBusyPlan(null);
-      setError(
-        err instanceof ApiError && (err.status === 403 || err.status === 409)
-          ? err.status === 403
-            ? "Only the account owner can choose a plan."
-            : err.message
-          : "Couldn't start checkout. Please try again."
-      );
+      setError(describeError(err, "We couldn't start checkout. Please try again."));
     }
   }
 
@@ -121,7 +114,7 @@ export function StepPlan({
     try {
       const sub = await api.getSubscription(orgId);
       setSubscription(sub);
-      if (!sub || !ACTIVE_STATUSES.includes(sub.status)) setError("Not confirmed yet — try again in a minute.");
+      if (!sub || !sub.entitled) setError("Not confirmed yet — try again in a minute.");
     } catch {
       setError("Couldn't check your plan right now.");
     }
@@ -143,30 +136,58 @@ export function StepPlan({
           <div className="flex items-center gap-3 rounded-xl border border-[var(--color-ok)]/30 bg-[var(--color-ok)]/10 px-4 py-3.5">
             <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-[var(--color-ok)]" />
             <div className="text-[15px] font-medium">
-              You&apos;re on the {PLANS.find((p) => p.id === subscription?.plan_id)?.name ?? subscription?.plan_id} plan
+              {subscription?.plan_name ? `You're on the ${subscription.plan_name} plan` : "Your plan is active"}
             </div>
           </div>
         ) : waiting ? (
           <p className="text-[14px] text-[var(--color-ink-soft)]">Confirming your payment…</p>
+        ) : plansFailed ? (
+          <div>
+            <p className="text-[14px] text-[var(--color-ink-soft)]">We couldn&apos;t load the plans right now.</p>
+            <button onClick={reloadPlans} className="mt-3 text-[13.5px] font-medium underline">
+              Try again
+            </button>
+          </div>
+        ) : plansLoading || plans === null ? (
+          <div className="grid animate-pulse gap-3 sm:grid-cols-2" aria-busy="true" aria-label="Loading plans">
+            {[0, 1].map((i) => (
+              <div key={i} className="h-40 rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)]" />
+            ))}
+          </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {PLANS.map((plan) => (
-              <button
-                key={plan.id}
-                onClick={() => handleChoose(plan.id)}
-                disabled={busyPlan !== null}
-                className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5 text-left transition-colors hover:border-[var(--color-ink)] disabled:opacity-60"
-              >
-                <div className="text-[15px] font-medium">{plan.name}</div>
-                <div className="mt-1 font-[family-name:var(--font-display)] text-[28px] font-bold">
-                  {plan.price}
-                  <span className="text-[14px] font-normal text-[var(--color-ink-soft)]">/mo</span>
-                </div>
-                <div className="mt-3 text-[13.5px] font-medium text-[var(--color-ink-soft)]">
-                  {busyPlan === plan.id ? "Opening checkout…" : `Choose ${plan.name}`}
-                </div>
-              </button>
-            ))}
+            {plans.map((plan) => {
+              const price = formatPrice(plan.price);
+              return (
+                <button
+                  key={plan.id}
+                  onClick={() => handleChoose(plan.id as "starter" | "growth")}
+                  disabled={busyPlan !== null}
+                  className="rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] p-5 text-left transition-colors hover:border-[var(--color-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ink)] disabled:opacity-60"
+                >
+                  <div className="text-[15px] font-medium">{plan.name}</div>
+                  <div className="mt-1 font-[family-name:var(--font-display)] text-[28px] font-bold">
+                    {price ? (
+                      <>
+                        {price.amount}
+                        <span className="text-[14px] font-normal text-[var(--color-ink-soft)]">{price.cadence}</span>
+                      </>
+                    ) : (
+                      <span className="text-[15px] font-normal text-[var(--color-ink-soft)]">Price shown at checkout</span>
+                    )}
+                  </div>
+                  <ul className="mt-3 space-y-1.5">
+                    {plan.features.map((f) => (
+                      <li key={f.id} className="flex items-start gap-1.5 text-[13px] text-[var(--color-ink-soft)]">
+                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[var(--color-ok)]" aria-hidden />
+                        {f.label}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 text-[13.5px] font-medium">{busyPlan === plan.id ? "Opening checkout…" : `Choose ${plan.name}`}</div>
+                </button>
+              );
+            })}
           </div>
         )}
 

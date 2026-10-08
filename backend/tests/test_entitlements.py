@@ -88,7 +88,7 @@ def test_starter_gets_starter_feature_but_not_growth_feature(db, tiered_plans):
     with pytest.raises(HTTPException) as exc:
         _gate(db, org, growth_f)
     assert exc.value.status_code == 402
-    assert "Upgrade to Growth" in exc.value.detail
+    assert exc.value.detail == "This feature is available on Growth. Upgrade to unlock it."
 
 
 def test_growth_gets_starter_and_growth_features(db, tiered_plans):

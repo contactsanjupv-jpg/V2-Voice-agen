@@ -134,7 +134,7 @@ def require_feature(feature):
         if plan is None or feature not in plan.features:
             needed = lowest_plan_with(feature)
             message = (
-                f"Your plan doesn't include this feature. Upgrade to {needed.name}."
+                f"This feature is available on {needed.name}. Upgrade to unlock it."
                 if needed is not None and plan is not None
                 else "Your plan doesn't include this feature."
             )
