@@ -72,7 +72,7 @@ export default function LeadsPage() {
               className="flex items-center justify-between rounded-xl border border-[var(--color-line)] bg-[var(--color-paper-raised)] px-4 py-3.5"
             >
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-x-2">
                   <span className="text-[14.5px] font-medium">{lead.name || "Unnamed lead"}</span>
                   {lead.phone && <span className="text-[13px] text-[var(--color-ink-soft)]">{lead.phone}</span>}
                 </div>
@@ -83,7 +83,7 @@ export default function LeadsPage() {
                 value={lead.status}
                 onChange={(e) => handleStatusChange(lead.id, e.target.value)}
                 disabled={updatingId === lead.id}
-                className={`ml-4 rounded-full border-0 px-3 py-1.5 text-[12.5px] font-medium capitalize outline-none ${STATUS_COLORS[lead.status] || ""}`}
+                className={`ml-4 flex-shrink-0 rounded-full border-0 px-3 py-1.5 text-[12.5px] font-medium capitalize outline-none ${STATUS_COLORS[lead.status] || ""}`}
               >
                 {STATUS_OPTIONS.map((s) => (
                   <option key={s} value={s}>

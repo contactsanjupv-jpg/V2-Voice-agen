@@ -107,7 +107,7 @@ export default function DashboardOverview() {
 
       {!dataLoading && (calls.length > 0 || leads.length > 0) && (
         <div className="mt-8 grid gap-6 md:grid-cols-2">
-          <div>
+          <div className="min-w-0">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-[15px] font-semibold">Recent calls</h2>
               <Link href="/dashboard/calls" className="text-[13px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)]">

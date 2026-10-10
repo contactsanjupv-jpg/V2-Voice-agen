@@ -49,8 +49,8 @@ export default function CallsPage() {
       )}
 
       {!dataLoading && calls.length > 0 && (
-        <div className="mt-6 overflow-hidden rounded-xl border border-[var(--color-line)]">
-          <table className="w-full text-left text-[13.5px]">
+        <div className="mt-6 overflow-x-auto rounded-xl border border-[var(--color-line)]">
+            <table className="w-full min-w-[640px] text-left text-[13.5px]">
             <thead className="border-b border-[var(--color-line)] bg-[var(--color-paper-raised)] text-[12px] uppercase tracking-wide text-[var(--color-ink-soft)]">
               <tr>
                 <th className="px-4 py-3 font-medium">Caller</th>
