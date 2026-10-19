@@ -152,6 +152,18 @@ def test_worker_pauses_a_past_due_org_beyond_the_cutoff_and_keeps_its_number():
         phone = db.query(PhoneNumber).filter_by(organization_id=uuid.UUID(org)).one()
         assert phone.agent_id is None and phone.status == PhoneNumberStatus.active  # paused, NOT released
         assert provider.unassigns and result["released"] == 0
+
+        # Repeated sweeps over the rest of the grace: still paused, number still kept, nothing released,
+        # and the provider is not asked to unassign the same number again.
+        unassigns = len(provider.unassigns)
+        for later in (now() + timedelta(hours=1), now() + timedelta(days=1), now() + timedelta(days=1, hours=23)):
+            result = enforce_entitlements(db, provider, now=later, organization_ids={uuid.UUID(org)})
+            db.expire_all()
+            assert result["released"] == 0 and not provider.releases
+            assert db.query(Agent).filter_by(organization_id=uuid.UUID(org)).one().status == AgentStatus.paused
+            phone = db.query(PhoneNumber).filter_by(organization_id=uuid.UUID(org)).one()
+            assert phone.status == PhoneNumberStatus.active and phone.agent_id is None
+        assert len(provider.unassigns) == unassigns
     finally:
         db.close()
 
