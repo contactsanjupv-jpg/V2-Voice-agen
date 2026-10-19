@@ -3,7 +3,8 @@ What a lapsed subscription does to live service. The policy is explicit and
 configurable (config.PAST_DUE_GRACE_DAYS, NUMBER_RELEASE_DELAY_DAYS):
 
     active/trialing ............ service on
-    past_due, inside grace ..... service on
+    past_due, inside grace ..... service on, unless purchased credit is spent more than
+                                 OVERAGE_GRACE_MINUTES below zero (paused like active; number KEPT)
     past_due beyond grace, paused, canceled, no subscription
                                  -> SUSPENDED: number unassigned (calls stop being
                                     answered, stop costing minutes), agent paused
@@ -27,7 +28,7 @@ from app.db.models.telephony import PhoneNumber, PhoneNumberStatus
 from app.db.models.voice_agent import Agent, AgentStatus
 from app.providers.phone.phone_provider import PhoneProvider
 from app.services.billing_state import current_subscription, has_active_subscription
-from app.services.credits import credits_exhausted_beyond_grace
+from app.services.credits import credits_beyond_overage_limit, credits_exhausted_beyond_grace
 from app.services.phone_provisioning import release_number
 
 logger = logging.getLogger("atla.entitlement")
@@ -45,7 +46,11 @@ def suspended_since(db: Session, org_id: uuid.UUID, now: datetime) -> datetime |
     since = sub.status_changed_at or sub.last_event_at or now
     if sub.status == "past_due":
         grace_ends = since + timedelta(days=settings.PAST_DUE_GRACE_DAYS)
-        return None if now < grace_ends else grace_ends
+        if now >= grace_ends:
+            return grace_ends
+        # Inside the grace the plan allowance is not renewed, so calls are paid for only by purchased
+        # credit. Same cut-off as an active org: stop once strictly more than the overage grace below zero.
+        return now if credits_beyond_overage_limit(db, org_id, now) else None
     return since
 
 
