@@ -5,7 +5,6 @@ Paddle is faked (conftest guard); nothing here calls a real provider.
 """
 import uuid
 
-import pytest
 
 from app.db.models.billing import CreditLedgerEntry
 from app.services.credits import credit_summary, ensure_plan_grant
@@ -50,7 +49,8 @@ def test_replays_updates_and_reconcile_style_calls_for_the_duplicate_grant_nothi
     org, first = _growth_customer()
     second = f"sub_{uuid.uuid4().hex[:12]}"
     evt = _ev("subscription.created", second, org, "pri_growth", at="2026-10-03T00:00:00Z")   # even a Growth duplicate
-    _post(evt); _post(evt)
+    _post(evt)
+    _post(evt)
     _post(_ev("subscription.updated", second, org, "pri_growth", at="2026-10-04T00:00:00Z"))
     db.rollback()
     dup = [s for s in __import__("app.services.duplicate_subscriptions", fromlist=["x"]).duplicate_subscriptions(db, uuid.UUID(org))][0]

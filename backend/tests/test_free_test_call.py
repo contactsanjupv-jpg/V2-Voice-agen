@@ -4,21 +4,19 @@ Drives the real HTTP route with the real Postgres; only Retell's network boundar
 """
 import threading
 import uuid
-from datetime import timedelta
 
 import pytest
 
 from app.config import get_settings
 from app.db.base import SessionLocal
-from app.db.models.billing import FreeTestAllowance, Subscription, UsageLedgerEntry
-from app.db.models.calls import Call
+from app.db.models.billing import FreeTestAllowance, UsageLedgerEntry
 from app.providers.call.retell_call_provider import RetellCallProvider
 from app.providers.retell_client import RetellAPIError
 from app.services import free_test
 from app.services.plans import PLANS, Plan
-from tests.billing_helpers import add_usage, new_org, now, subscribe
+from tests.billing_helpers import add_usage, new_org, subscribe
 from tests.test_agent_config import _agent_id, _body, _put, _seed_business, fake  # noqa: F401  (fake is a fixture)
-from tests.test_call_pipeline import _call, _post as retell_post, _seed
+from tests.test_call_pipeline import _call, _post as retell_post
 
 settings = get_settings()
 FREE_MESSAGE = "You've used your free test call. Choose a plan to test your receptionist again."

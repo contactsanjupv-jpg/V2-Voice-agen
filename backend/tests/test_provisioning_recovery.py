@@ -192,11 +192,15 @@ def test_the_real_worker_loop_recovers_and_survives_restarts(fake, monkeypatch):
     mine = lambda: fake.nick_calls.count(nick)  # noqa: E731
     owned = lambda: sum(1 for n in fake.numbers.values() if n["nickname"] == nick)  # noqa: E731
     assert _prov(org)[0] == "ambiguous"
-    run_worker.run_once(fake); assert _prov(org)[0] == "ambiguous"        # too early to settle
-    _age(org, 11); run_worker.run_once(fake)
+    run_worker.run_once(fake)
+    assert _prov(org)[0] == "ambiguous"  # too early to settle
+    _age(org, 11)
+    run_worker.run_once(fake)
     assert _prov(org) == ("failed", 1, NOT_FOUND_AFTER_RECONCILE)
-    run_worker.run_once(fake); assert mine() == 1                          # cool-down: sweep does not retry yet
-    _age(org, 31); run_worker.run_once(fake)                               # <- "restart" then the retry
+    run_worker.run_once(fake)
+    assert mine() == 1  # cool-down: sweep does not retry yet
+    _age(org, 31)
+    run_worker.run_once(fake)  # <- "restart" then the retry
     assert _numbers(org) == 1 and mine() == 2 and _prov(org)[0] == "purchased"
     for _ in range(3):
         run_worker.run_once(fake)

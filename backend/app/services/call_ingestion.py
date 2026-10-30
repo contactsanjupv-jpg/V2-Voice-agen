@@ -17,7 +17,6 @@ Rules that make this safe to run repeatedly and out of order:
     the event failed/retryable; nothing is ever silently discarded.
 """
 import logging
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 

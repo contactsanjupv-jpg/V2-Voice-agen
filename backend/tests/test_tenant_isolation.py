@@ -20,7 +20,7 @@ def _signup(email: str, org_name: str) -> tuple[TestClient, str]:
         json={"email": email, "password": "correct-horse-battery-staple", "organization_name": org_name},
     )
     assert resp.status_code == 201, resp.text
-    me = c.get("/api/v1/auth/me")
+    c.get("/api/v1/auth/me")
     import psycopg
 
     from app.config import get_settings

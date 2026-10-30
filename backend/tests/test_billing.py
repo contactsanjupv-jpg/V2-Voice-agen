@@ -278,7 +278,8 @@ def test_activate_blocked_without_subscription():
 def test_old_event_cannot_resurrect_a_canceled_subscription(db):
     _c, org = _new_org()
     sub_id = f"sub_{uuid.uuid4().hex[:12]}"
-    t = lambda minute: f"2026-10-01T00:{minute:02d}:00.000000Z"
+    def t(minute):
+        return f"2026-10-01T00:{minute:02d}:00.000000Z"
     assert _post(_event("subscription.created", sub_id, org, at=t(1))).status_code == 204
     assert _post(_event("subscription.canceled", sub_id, org, status="canceled", at=t(5))).status_code == 204
     # an older "active" update is delivered late
@@ -296,7 +297,8 @@ def test_old_event_cannot_resurrect_a_canceled_subscription(db):
 def test_newer_event_still_applies_after_a_stale_one_was_ignored(db):
     _c, org = _new_org()
     sub_id = f"sub_{uuid.uuid4().hex[:12]}"
-    t = lambda minute: f"2026-10-01T00:{minute:02d}:00.000000Z"
+    def t(minute):
+        return f"2026-10-01T00:{minute:02d}:00.000000Z"
     _post(_event("subscription.created", sub_id, org, status="past_due", at=t(10)))
     _post(_event("subscription.updated", sub_id, org, status="active", at=t(2)))  # stale
     assert _sub(db, org).status == "past_due"

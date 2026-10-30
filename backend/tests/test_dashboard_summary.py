@@ -111,7 +111,7 @@ def test_awaiting_leads_are_only_new_ones_oldest_first_and_capped():
     _lead(org, NOW - timedelta(days=20), status=LeadStatus.contacted, name="Done")
     body = _get(c, org, range="today", tz="UTC").json()
     assert body["leads_awaiting_follow_up"] == 7
-    assert [l["name"] for l in body["awaiting_leads"]] == ["Lead 6", "Lead 5", "Lead 4", "Lead 3", "Lead 2"]
+    assert [lead["name"] for lead in body["awaiting_leads"]] == ["Lead 6", "Lead 5", "Lead 4", "Lead 3", "Lead 2"]
     assert body["oldest_unattended_lead_at"].startswith("2026-10-06")
 
 

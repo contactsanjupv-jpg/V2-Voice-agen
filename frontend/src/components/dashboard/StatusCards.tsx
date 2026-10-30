@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { AgentOut, PhoneNumberOut, SubscriptionOut } from "@/lib/api";
 import { describeSubscription } from "@/lib/billingState";
-import { formatPhone, type ReceptionistStatus } from "@/lib/receptionistStatus";
+import { formatPhone, numberCaption, type ReceptionistStatus } from "@/lib/receptionistStatus";
 import { DOT, TEXT } from "./tone";
 import { SETTINGS_BILLING_HREF } from "@/lib/settingsRoutes";
 
@@ -80,7 +80,7 @@ export function StatusCards({
         ) : phone ? (
           <>
             <div className="mt-2.5 break-words text-[18px] font-semibold">{formatPhone(phone.number)}</div>
-            <p className="mt-1 text-[13.5px] text-[var(--color-ink-soft)]">Callers reach your receptionist here.</p>
+            <p className="mt-1 text-[13.5px] text-[var(--color-ink-soft)]">{numberCaption(status)}</p>
           </>
         ) : (
           <>

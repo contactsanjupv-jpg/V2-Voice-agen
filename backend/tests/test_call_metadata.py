@@ -2,7 +2,6 @@
 Level 2: call metadata, usage and transcript persistence through the real signed webhook and ingestion pipeline.
 Cost unit (verified against Retell's API reference): call_cost.combined_cost is CENTS and may be fractional.
 """
-import uuid
 
 import pytest
 

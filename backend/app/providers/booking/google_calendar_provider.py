@@ -18,7 +18,7 @@ constrained charset) — a retried create_booking with the same key updates
 the existing event rather than creating a duplicate.
 """
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 

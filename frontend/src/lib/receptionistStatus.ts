@@ -20,10 +20,18 @@ export function formatPhone(number: string): string {
   return number;
 }
 
+/** What the business-number card says about callers. It must not claim callers reach a receptionist that isn't answering. */
+export function numberCaption(status: ReceptionistStatus | null): string {
+  return status?.state === "billing"
+    ? "Your receptionist isn't answering calls right now, so callers aren't reaching it."
+    : "Callers reach your receptionist here.";
+}
+
 /**
  * What the sidebar says about the receptionist. Only states the data can prove:
  *  - live      the agent is active and the plan hasn't stopped service
- *  - billing   the agent is active but the plan is paused / ended / overdue past the grace period
+ *  - billing   the agent is active but the plan is paused / ended / overdue past the grace period,
+ *              or the agent was paused while the payment is overdue
  *  - ready     built and saved, but not answering real calls yet
  *  - setup     not built, or changes not saved yet
  * `sub`: null = no subscription, undefined = couldn't be read (no billing claim is made).
@@ -83,6 +91,19 @@ export function receptionistStatus(input: {
       detail: phone ? formatPhone(phone.number) : "Answering calls",
       tone: "ok",
       action: null,
+    };
+  }
+
+  // Paused while the payment is overdue: the worker pauses it (past the grace, or earlier once call usage outruns the
+  // available credit). It is NOT "ready to go live": go-live and top-ups are refused until the subscription is paid
+  // again, so the way back is the payment-update flow in billing settings, then Go live.
+  if (sub?.status === "past_due" && agent.status === "paused") {
+    return {
+      state: "billing",
+      label: "Paused",
+      detail: "Your payment is overdue, so your receptionist isn't answering calls. Update your payment method, then go live again.",
+      tone: "bad",
+      action: { label: "Fix billing", href: SETTINGS_BILLING_HREF },
     };
   }
 

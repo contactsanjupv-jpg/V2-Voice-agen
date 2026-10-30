@@ -312,10 +312,21 @@ def _is_entitled(db: Session, organization_id: uuid.UUID) -> bool:
     return sub is not None and sub.status in ACTIVE_STATUSES
 
 
+def _below_overage_limit(s: CreditSummary) -> bool:
+    """The one definition of the cut-off: strictly more than OVERAGE_GRACE_MINUTES below zero."""
+    return s.available_seconds < -get_settings().OVERAGE_GRACE_MINUTES * 60
+
+
+def credits_beyond_overage_limit(db: Session, organization_id: uuid.UUID, now: datetime | None = None) -> bool:
+    """True once the org has run further below zero than the configured grace allows, whatever its
+    subscription status. The balance is a pure function of the ledgers; `entitled` is not consulted."""
+    return _below_overage_limit(credit_summary(db, organization_id, now))
+
+
 def credits_exhausted_beyond_grace(db: Session, organization_id: uuid.UUID, now: datetime | None = None) -> bool:
     """True once an entitled org has run further below zero than the configured grace allows."""
     s = credit_summary(db, organization_id, now)
-    return s.entitled and s.available_seconds < -get_settings().OVERAGE_GRACE_MINUTES * 60
+    return s.entitled and _below_overage_limit(s)
 
 
 # ---------------------------------------------------------------- test-call admission

@@ -1,0 +1,5 @@
+# Lint config used locally and in CI (.github/workflows/ci.yml).
+[lint.per-file-ignores]
+# pytest fixtures are imported from a helper module and then taken as test arguments, which ruff reports as F811.
+# Every test function name is unique (checked), so no test is silently shadowed.
+"tests/**" = ["F811"]

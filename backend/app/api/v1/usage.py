@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth.deps import current_membership
 from app.config import get_settings
 from app.db.base import get_db
-from app.db.models.billing import CreditLedgerEntry, TopupPurchase
+from app.db.models.billing import CreditLedgerEntry
 from app.db.models.tenancy import OrganizationMember
 from app.services import free_test
 from app.services.billing_state import current_subscription

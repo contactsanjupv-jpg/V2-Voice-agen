@@ -1,13 +1,13 @@
-import logging
 """
 Orchestrates spec §7-8's full importer flow:
   URL -> SSRF-safe fetch -> relevant page discovery -> extraction ->
   structured business info -> stored as a DRAFT for customer review
   (never auto-approved into knowledge_items).
 """
+import logging
 from dataclasses import dataclass
 
-from app.core.llm_extraction import LLMExtractionError, extract_business_info
+from app.core.llm_extraction import extract_business_info
 from app.core.ssrf_safe_fetch import FetchTooLargeError, SSRFBlockedError, safe_fetch
 from app.core.website_extraction import ExtractedPage, parse_html, rank_links_by_relevance
 

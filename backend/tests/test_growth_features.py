@@ -61,8 +61,17 @@ def test_every_advertised_growth_feature_is_gated_by_a_route():
     """A feature listed in the catalog must not be shippable-by-accident: its route depends on require_feature."""
     from app.main import app
 
+    def _all_routes(routes):
+        # Newer FastAPI keeps each include_router() as one nested object instead of flattening its routes.
+        for route in routes:
+            nested = getattr(route, "original_router", None)
+            if nested is not None:
+                yield from _all_routes(nested.routes)
+            else:
+                yield route
+
     gated = set()
-    for route in app.routes:
+    for route in _all_routes(app.routes):
         for dep in getattr(getattr(route, "dependant", None), "dependencies", []):
             call = dep.call
             cells = getattr(call, "__closure__", None) or []

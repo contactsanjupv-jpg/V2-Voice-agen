@@ -62,7 +62,8 @@ test("the exact reported sequence: 202 requested, GET still active, reload keeps
   assert.equal(info.label, "Cancellation requested");
   assert.notEqual(info.label, "Active");
   assert.doesNotMatch(info.headline, /ends on/i);
-  const canCancel = reloaded.entitled && !reloaded.cancel_effective_at && phase === "none";
+  // Evaluate the phase again: after assert.equal(phase, "pending") the compiler has (correctly) narrowed `phase`.
+  const canCancel = reloaded.entitled && !reloaded.cancel_effective_at && cancelPhase(reloaded, false, NOW) === "none";
   assert.equal(canCancel, false); // Cancel plan stays hidden after reload
   assert.equal(s.calls.post, 1); // and no further POST was made
 

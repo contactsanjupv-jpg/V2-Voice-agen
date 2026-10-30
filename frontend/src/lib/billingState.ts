@@ -63,7 +63,7 @@ export function describeSubscription(sub: SubscriptionOut | null, cancelPending 
       tone: "bad",
       headline: "Your payment needs attention",
       detail: stillLive
-        ? `Update your payment method to keep your receptionist active. It stays live until ${formatDate(sub.service_ends_at)}.`
+        ? `Update your payment method to keep your receptionist active. It can stay live until ${formatDate(sub.service_ends_at)}, but it will pause sooner if your calls use up the credit available while your payment is overdue.`
         : "Your receptionist has stopped answering calls. Update your payment method to bring it back.",
     };
   }

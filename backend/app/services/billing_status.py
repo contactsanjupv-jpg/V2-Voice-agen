@@ -22,7 +22,8 @@ def subscription_view(db: Session, organization_id: uuid.UUID) -> dict | None:
 
     service_ends_at = None
     if sub.status == "past_due":
-        # Same rule services/entitlement.suspended_since enforces: service continues for the grace period.
+        # The LATEST service can last (services/entitlement.suspended_since): the grace end. It can stop sooner, once
+        # call usage outruns the available credit, so the UI must not promise service until this date.
         since = sub.status_changed_at or sub.last_event_at
         if since is not None:
             service_ends_at = since + timedelta(days=get_settings().PAST_DUE_GRACE_DAYS)

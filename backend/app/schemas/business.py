@@ -1,4 +1,8 @@
-from pydantic import BaseModel, Field, HttpUrl
+import re
+import uuid as _uuid
+from urllib.parse import urlparse
+
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 
 class ImportWebsiteRequest(BaseModel):
@@ -46,12 +50,6 @@ class BusinessApproveRequest(BaseModel):
     services: list[str] = []
     faqs: list[dict] = []
     policies: list[str] = []
-
-import re
-import uuid as _uuid
-from urllib.parse import urlparse
-
-from pydantic import field_validator
 
 _PHONE_CHARS = re.compile(r"^[+\d\s().-]+$")
 

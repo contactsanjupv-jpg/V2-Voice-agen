@@ -160,7 +160,7 @@ def summary(
         leads_awaiting_follow_up=int(awaiting[0]),
         oldest_unattended_lead_at=awaiting[1],
         awaiting_leads=[
-            AwaitingLead(id=str(l.id), name=l.name, phone=l.phone, reason=l.reason, created_at=l.created_at, call_id=str(l.call_id) if l.call_id else None)
-            for l in oldest
+            AwaitingLead(id=str(lead.id), name=lead.name, phone=lead.phone, reason=lead.reason, created_at=lead.created_at, call_id=str(lead.call_id) if lead.call_id else None)
+            for lead in oldest
         ],
     )

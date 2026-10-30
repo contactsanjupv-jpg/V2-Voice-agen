@@ -3,7 +3,6 @@ import re
 from types import SimpleNamespace
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.llm_extraction import LLMExtractionError

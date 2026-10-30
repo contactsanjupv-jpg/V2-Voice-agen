@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.deps import current_membership, get_current_user, has_active_subscription, require_feature, require_role
+from app.auth.deps import current_membership, get_current_user, require_feature, require_role
 from app.auth.rate_limit import RateLimitExceeded, check_rate_limit
 from app.config import get_settings
 from app.services import free_test

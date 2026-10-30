@@ -1,38 +1,47 @@
 # Atla — Frontend
 
-Next.js 16 marketing site + auth. 5 pages: home, how-it-works, industries,
-pricing, get-started (real signup/login, wired to the backend).
+Next.js 16 app: marketing pages (home, how-it-works, industries, pricing), sign-up/login (`/get-started`), the
+onboarding wizard, checkout, and the authenticated dashboard (calls, leads, go-live, test call, and settings for
+business, receptionist, voice, billing, security and account deletion). Every page talks to the backend in `../backend`.
 
 ## Local setup
 
 ```bash
-npm install
-cp .env.local.example .env.local   # points at your backend, default localhost:8000
+npm ci
+cp .env.local.example .env.local   # if present; otherwise create .env.local with the variables below
 npm run dev
 ```
 
-Open http://localhost:3000. The backend (see ../backend) must be running
-for signup/login on /get-started to actually work — everything else is
-static marketing content.
+Open http://localhost:3000. The backend must be running for anything beyond the static marketing pages.
 
-## What's real vs not yet
+Environment variables (all `NEXT_PUBLIC_`, so they are visible in the browser; never put a secret behind that prefix):
 
-- Real: signup/login form on /get-started, wired to the live backend
-  session/auth system, with client-side validation and real error
-  mapping (409 email taken, 401 wrong password, 429 rate limited).
-- Not yet: the onboarding wizard (website import → review → voice →
-  number → activate) and the authenticated dashboard. Signing up today
-  successfully creates a real account and session but lands on a page
-  that says so plainly — nothing is faked to look more finished than it is.
+- `NEXT_PUBLIC_API_BASE_URL`: the backend URL (default `http://localhost:8000`). It is also added to the CSP `connect-src`.
+- `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`: Paddle's client-side token. It must belong to the same environment as the backend's
+  `PADDLE_ENV` (`test_` for sandbox, `live_` for live), or checkout refuses to open.
+
+## Checks
+
+```bash
+npm test            # node:test unit tests (no browser)
+npm run lint
+npx tsc --noEmit
+npm run build -- --webpack
+```
+
+The build downloads Google Fonts, so it needs network access.
+
+## What these tests do not cover
+
+They test the logic (status, billing text, settings, calls and leads), not rendered pages in a browser. Checkout,
+the test call (microphone) and the live Paddle/Retell flows have to be checked by hand in a sandbox.
 
 ## Security
 
-- CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy set in
-  `next.config.ts` for every route.
-- No secrets in this codebase — `NEXT_PUBLIC_API_BASE_URL` is the only
-  env var, and it's a public URL, not a credential (anything prefixed
-  `NEXT_PUBLIC_` is bundled into client JS and visible to anyone — never
-  put a real secret behind that prefix in this or any Next.js app).
+- X-Frame-Options, Referrer-Policy and Permissions-Policy are set in `next.config.ts`; the Content-Security-Policy is
+  built per request with a nonce in `src/proxy.ts` (`src/lib/csp.ts`).
+- No secrets in this codebase: the only environment variables are the two public `NEXT_PUBLIC_` values above
+  (a URL and a Paddle client token), which are not credentials.
 - Session auth relies entirely on the backend's HttpOnly/Secure/SameSite
   cookie — this app never touches or stores the session token itself.
 - Form validation is client-side UX only; the backend re-validates and

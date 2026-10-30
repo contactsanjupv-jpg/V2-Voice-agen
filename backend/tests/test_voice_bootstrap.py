@@ -1,9 +1,7 @@
 """A fresh database must reach the Voice step with voices available — no manual DB fixing."""
-import pytest
 from sqlalchemy import text
 
 from app.db.base import SessionLocal
-from app.db.models.voice_agent import Voice
 from app.providers.retell_client import RetellAPIError
 from app.providers.voice.retell_voice_provider import RetellVoiceProvider
 from tests.test_tenant_isolation import _signup

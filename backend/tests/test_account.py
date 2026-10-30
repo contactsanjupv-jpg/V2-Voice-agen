@@ -1,7 +1,6 @@
 """Account essentials: password reset/change, account deletion, billing management."""
 import re
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient

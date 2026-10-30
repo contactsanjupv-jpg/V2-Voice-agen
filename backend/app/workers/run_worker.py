@@ -40,20 +40,35 @@ def run_once(phone_provider=None) -> dict:
         summary = {"events": "error"}
         failed.append("events")
     db = SessionLocal()
-    try:
-        provider = phone_provider or RetellPhoneProvider()
-        summary["provisioning_settled"] = reconcile_provisioning(db, provider)
-        summary["entitlements"] = enforce_entitlements(db, provider)
+
+    skipped = object()
+
+    def isolated(name: str, key: str, job) -> None:
+        """Run one job so that its failure can never stop the jobs after it. Entitlement enforcement is what stops
+        unbilled usage, so it must not depend on the provisioning sweep (or any other job) having succeeded."""
         try:
-            summary["auto_provisioning"] = settle_auto_provisioning(db, provider)
-        except Exception:  # noqa: BLE001 - must not stop the other jobs
+            result = job()
+        except Exception:  # noqa: BLE001
             db.rollback()
-            logger.exception("Automatic number provisioning sweep failed")
-            failed.append("auto_provisioning")
+            logger.exception("Worker job %s failed; the other jobs still run", name)
+            failed.append(name)
+            return
+        if result is not skipped:
+            summary[key] = result
+
+    def topups():
         try:
-            summary["topups"] = reconcile_topups(db)  # settles purchases whose webhook never arrived
+            return reconcile_topups(db)  # settles purchases whose webhook never arrived
         except RuntimeError:
             logger.error("Paddle is not configured; skipping top-up reconciliation")
+            return skipped
+
+    try:
+        provider = phone_provider or RetellPhoneProvider()
+        isolated("provisioning", "provisioning_settled", lambda: reconcile_provisioning(db, provider))
+        isolated("entitlements", "entitlements", lambda: enforce_entitlements(db, provider))
+        isolated("auto_provisioning", "auto_provisioning", lambda: settle_auto_provisioning(db, provider))
+        isolated("topups", "topups", topups)
     except RuntimeError:
         logger.error("Retell is not configured; skipping provider jobs")
         failed.append("provider_jobs")

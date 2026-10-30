@@ -12,7 +12,6 @@ Minimal production monitoring. Three layers, none of which needs a vendor SDK:
 Nothing here ever includes secrets, URLs, ids of customers, payment data or call content: counts and categories only.
 """
 import logging
-import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass

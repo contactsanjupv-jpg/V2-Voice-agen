@@ -5,7 +5,7 @@ Everything here is a count or a sum over stored rows, grouped by calendar day in
 A day with nothing in it is a true zero. There are no revenue, ROI, conversion or savings figures:
 the system does not record them, so it does not show them.
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel

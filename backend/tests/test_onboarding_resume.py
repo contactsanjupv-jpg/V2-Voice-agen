@@ -4,7 +4,6 @@ import uuid
 from app.db.base import SessionLocal
 from app.db.models.business import Business
 from app.db.models.calls import Call, CallDirection
-from app.db.models.voice_agent import Agent
 from tests.test_agent_config import FakeRetell, _agent_id, _body, _put  # noqa: F401
 from tests.test_tenant_isolation import _signup
 import pytest
