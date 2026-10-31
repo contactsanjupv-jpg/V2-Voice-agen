@@ -1,4 +1,3 @@
-
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -324,7 +323,7 @@ test("dashboard lists one billing item for a paused past-due receptionist, with 
 
 // ---- Fix billing leads to the existing payment-update flow ----
 
-test("Fix billing points at the existing Settings page hosting the payment-update flow", () => {
+test("Fix billing points at the existing Settings billing route and payment-update flow", () => {
   const s = receptionistStatus({
     agent: agent({ status: "paused" }),
     phone,
@@ -334,12 +333,13 @@ test("Fix billing points at the existing Settings page hosting the payment-updat
 
   assert.equal(s.action?.href, SETTINGS_BILLING_HREF);
 
-  const page = readFileSync(
-    new URL("../src/app/dashboard/settings/page.tsx", import.meta.url),
+  // Settings routing selects BillingView, which renders BillingPanel.
+  const billingView = readFileSync(
+    new URL("../src/components/settings/views/BillingView.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(page, /<BillingPanel /);
+  assert.match(billingView, /BillingPanel/);
 
   const panel = readFileSync(
     new URL("../src/components/billing/BillingPanel.tsx", import.meta.url),
