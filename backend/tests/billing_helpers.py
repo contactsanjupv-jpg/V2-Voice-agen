@@ -72,3 +72,11 @@ def summary(org_id):
         return credit_summary(db, uuid.UUID(org_id))
     finally:
         db.close()
+
+
+def live_period() -> tuple[str, str]:
+    """(starts_at, ends_at) of a Paddle billing period that contains NOW. Tests that need the plan grant to exist use this:
+    a fixed calendar period silently expires and the grant is no longer created."""
+    n = now()
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    return (n - timedelta(days=1)).strftime(fmt), (n + timedelta(days=29)).strftime(fmt)

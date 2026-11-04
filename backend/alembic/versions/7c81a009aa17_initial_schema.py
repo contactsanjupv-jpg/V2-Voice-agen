@@ -347,3 +347,20 @@ def downgrade() -> None:
     op.drop_table('users')
     op.drop_table('organizations')
     # ### end Alembic commands ###
+
+    # Dropping tables does not drop their enum types; left behind, the next `upgrade head` fails with "type already exists".
+    for enum_name in (
+        'agent_status',
+        'appointment_status',
+        'business_status',
+        'call_direction',
+        'integration_provider',
+        'integration_status',
+        'knowledge_item_source',
+        'knowledge_item_type',
+        'lead_status',
+        'org_role',
+        'phone_number_status',
+        'webhook_source',
+    ):
+        op.execute(f'DROP TYPE IF EXISTS {enum_name}')

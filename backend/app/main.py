@@ -32,7 +32,12 @@ settings = get_settings()
 settings.assert_startup_safe("api")  # fail at start-up, not on the first customer request (the worker runs the same check)
 monitoring.publish_config_fingerprint("api")  # best effort: lets monitoring notice an API/worker configuration mismatch
 
-app = FastAPI(title="Atla API", version="0.1.0", docs_url=None if settings.is_production else "/docs")
+def docs_urls(is_production: bool) -> dict:
+    """The interactive docs AND the machine-readable schema are not served in production: /openapi.json lists every route."""
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None} if is_production else {}
+
+
+app = FastAPI(title="Atla API", version="0.1.0", **docs_urls(settings.is_production))
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(

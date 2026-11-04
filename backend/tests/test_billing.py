@@ -35,7 +35,9 @@ def _new_org():
     return _signup(f"bill-{tag}@billing-test.com", f"Billing Org {tag}")
 
 
-def _event(event_type, sub_id, org_id, status="active", plan="starter", event_id=None, at="2026-10-01T00:00:00.000000Z"):
+def _event(event_type, sub_id, org_id, status="active", plan="starter", event_id=None, at="2026-10-01T00:00:00.000000Z", period=None):
+    """`period`: (starts_at, ends_at); default is the fixed October 2026 period many tests rely on."""
+    starts_at, ends_at = period or ("2026-10-01T00:00:00.000000Z", "2026-11-01T00:00:00.000000Z")
     return {
         "event_id": event_id or f"evt_{uuid.uuid4().hex}",
         "event_type": event_type,
@@ -46,8 +48,8 @@ def _event(event_type, sub_id, org_id, status="active", plan="starter", event_id
             "status": status,
             "custom_data": {"organization_id": org_id, "plan_id": plan},
             "current_billing_period": {
-                "starts_at": "2026-10-01T00:00:00.000000Z",
-                "ends_at": "2026-11-01T00:00:00.000000Z",
+                "starts_at": starts_at,
+                "ends_at": ends_at,
             },
         },
     }

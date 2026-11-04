@@ -11,9 +11,14 @@ from app.services.credits import credit_summary, ensure_plan_grant
 from app.services.billing_state import current_subscription
 from tests.test_billing import _new_org, _post
 from tests.test_billing_level1 import _settings  # noqa: F401  (autouse: Paddle test settings)
-from tests.test_entitlements import _ev
+from tests.billing_helpers import live_period
+from tests.test_entitlements import _ev as _ev_fixed_period
 
 GROWTH_SECONDS, STARTER_SECONDS = 480 * 60, 180 * 60
+
+
+def _ev(*args, **kwargs):
+    return _ev_fixed_period(*args, period=live_period(), **kwargs)  # a period that contains today, so the grant is created
 
 
 def _grants(db, org):

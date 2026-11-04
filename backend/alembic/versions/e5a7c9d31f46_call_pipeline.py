@@ -56,6 +56,8 @@ def downgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
+    # The initial schema's downgrade drops this index; recreating the table without it made `downgrade base` fail.
+    op.create_index("ix_usage_records_organization_id", "usage_records", ["organization_id"])
     op.drop_index("uq_leads_call", table_name="leads")
     op.drop_column("webhook_events", "next_attempt_at")
     op.drop_column("webhook_events", "last_error")

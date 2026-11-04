@@ -21,6 +21,9 @@
 | Monitoring: readiness, alerts, worker heartbeat, push | PASS (automated) / NOT CONFIGURED | docs/MONITORING.md: you must add an uptime monitor, alert webhook, MONITORING_TOKEN, worker supervisor |
 | Error tracking (Sentry etc.) | NOT DONE | not integrated |
 | SMTP / Redis / HTTPS / worker on the real deployment | NOT VERIFIED | startup guard checks presence only; verify on deploy |
+| Client-IP rate limiting behind your proxy | EXERCISED LOCALLY / NOT VERIFIED on host | docs/DEPLOYMENT.md section 1: set FORWARDED_ALLOW_IPS to your proxy (not `*`) or one customer's failed logins can block everyone |
+| Database backup and restore | EXERCISED LOCALLY / NOT VERIFIED on host | docs/DEPLOYMENT.md section 4: dump/restore drill passed locally; do it with your host's real backup |
+| Migrations round trip (empty db, up/down/up, no drift) | PASS (automated) | tests/test_migration_roundtrip.py; production strategy is forward-only with a backup first (DEPLOYMENT.md section 5) |
 | Lapse policies (3 days / 7 days) | TEMPORARY | docs/LAPSE_POLICIES.md - business decision pending |
 | Frontend production build | PASS (you, on your Mac) | no frontend changes since |
 
@@ -28,3 +31,5 @@
 - [ ] Run the worker under a supervisor that restarts on ANY exit (the watchdog exits with code 70 on a stall).
 - [ ] After the first scheduled reconciliation (check logs for `Billing reconciliation:`), confirm no `billing_drift_unresolved` or `billing_reconcile_blind` alert.
 - [ ] After deploying the worker, confirm `/health/ready` shows `worker_state` `ok` after the first pass (`starting` before it is expected).
+- [ ] Set `FORWARDED_ALLOW_IPS` to the proxy's address range and confirm two different networks are rate-limited independently (docs/DEPLOYMENT.md).
+- [ ] Take a database backup immediately before every `alembic upgrade head`, and restore one into a scratch database to time the recovery.

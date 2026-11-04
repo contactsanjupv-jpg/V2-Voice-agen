@@ -21,12 +21,13 @@ def _paddle_settings(monkeypatch):
     monkeypatch.setattr(s, "PADDLE_GROWTH_PRICE_ID", "pri_growth")
 
 
-def _ev(event_type, sub_id, org_id, price_id=None, status="active", custom_plan=None, at="2026-10-01T00:00:00.000000Z"):
+def _ev(event_type, sub_id, org_id, price_id=None, status="active", custom_plan=None, at="2026-10-01T00:00:00.000000Z", period=None):
+    starts_at, ends_at = period or ("2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z")
     data = {
         "id": sub_id,
         "status": status,
         "custom_data": {"organization_id": org_id, **({"plan_id": custom_plan} if custom_plan else {})},
-        "current_billing_period": {"starts_at": "2026-10-01T00:00:00Z", "ends_at": "2026-11-01T00:00:00Z"},
+        "current_billing_period": {"starts_at": starts_at, "ends_at": ends_at},
     }
     if price_id:
         data["items"] = [{"status": "active", "quantity": 1, "price": {"id": price_id}}]
