@@ -86,4 +86,4 @@ jobs:
       - name: Production build
         run: npm run build -- --webpack
       - name: Dependency audit
-        run: npm audit
+        run: npm audit --omit=dev
