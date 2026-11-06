@@ -19,7 +19,7 @@ Status: **NOT VERIFIED** - no sandbox credentials have been provided; nothing be
 | 3 | Settings > Cancel plan | 202 `requested` with `effective_at`; Paddle shows scheduled cancel; Settings shows "Ends on" | exact `scheduled_change` shape in GET /subscriptions/{id} and in `subscription.updated` |
 | 4 | Cancel again | `already_scheduled`, no second cancel call in logs | |
 | 5 | Confirm access continues | status active, features entitled | |
-| 6 | Create a platform admin row for yourself, then POST `/api/v1/admin/refunds` for the sandbox transaction | 202 `submitted` or `approved` | Paddle's response to `POST /adjustments` (status values, field names) |
+| 6 | Grant yourself platform admin (`docs/SANDBOX_PLATFORM_ADMIN.md`), then POST `/api/v1/admin/refunds` for the sandbox transaction | 202 `submitted` or `approved` | Paddle's response to `POST /adjustments` (status values, field names) |
 | 7 | Approve/reject in the Paddle sandbox dashboard | `adjustment.updated` webhook moves our row to `approved`/`rejected`; audit rows written | payload shape |
 | 8 | Repeat the refund request | 409 already exists, no second adjustment | whether Paddle itself also refuses a duplicate |
 | 9 | Timeout recovery: with the request in flight, block outbound to api sandbox (or stop the tunnel/network) so the POST times out, then retry | row `unconfirmed`; retry adopts the existing adjustment (or re-posts only if none exists) | `GET /adjustments?transaction_id=&action=refund` response |

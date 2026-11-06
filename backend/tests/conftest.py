@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.base import Base, SessionLocal, engine
+from tests.db_safety import UnsafeTestDatabase, check_test_database
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -16,21 +17,21 @@ def _create_schema():
     SAFETY GUARDRAIL: this fixture DROPS every table at teardown. Running
     it against a real dev/prod database is a real, recoverable-only-by-
     rerunning-migrations mistake — it happened twice already. Refuse to
-    even start unless the database name makes it obvious this is a
-    throwaway test database, rather than trusting every future `pytest`
-    invocation to remember a special env var.
+    even start unless ENV, the host and the database name together make
+    it obvious this is a local, throwaway test database (tests/db_safety.py:
+    an exact name pattern, not a substring), rather than trusting every
+    future `pytest` invocation to remember a special env var.
     """
-    db_url = get_settings().DATABASE_URL
-    db_name = db_url.rsplit("/", 1)[-1]
-    if "test" not in db_name.lower():
+    settings = get_settings()
+    try:
+        check_test_database(settings.DATABASE_URL, settings.ENV)
+    except UnsafeTestDatabase as why:
         pytest.exit(
-            f"\n\nREFUSING TO RUN: DATABASE_URL points at '{db_name}', which doesn't look like a "
-            f"test database (expected something with 'test' in the name, e.g. 'atla_test').\n"
-            f"This test suite DROPS ALL TABLES at the end of the run — running it against your "
-            f"real dev database will wipe it.\n\n"
+            f"\n\nREFUSING TO RUN: {why}\n"
+            f"This test suite DROPS ALL TABLES at the end of the run - running it against a real dev or production database will wipe it.\n\n"
             f"Fix: createdb -O atla atla_test   (if you haven't already)\n"
             f"Then run tests as:\n"
-            f'  DATABASE_URL="postgresql+psycopg://atla:atla@localhost:5432/atla_test" python -m pytest tests/ -v\n',
+            f'  ENV=test DATABASE_URL="postgresql+psycopg://atla:atla@localhost:5432/atla_test" python -m pytest tests/ -v\n',
             returncode=1,
         )
     Base.metadata.create_all(bind=engine)
