@@ -6,6 +6,12 @@ Looking at `url.host` alone is not enough. libpq lets the query string, and the 
 ?host=prod.example.com, ?hostaddr=..., repeated or comma-separated hosts, ?service=..., PGHOST / PGHOSTADDR / PGSERVICE, and socket
 directories. So this check FAILS CLOSED: it accepts a URL only if every routing-relevant part is known and provably local, and it
 refuses anything it does not recognise.
+
+WHAT THIS CHECK CANNOT PROVE. It validates CONFIGURATION, not the network. A URL port, and the PGPORT environment variable, are NOT
+validated for forwarding: "localhost:5433" is accepted even if something on this machine tunnels that port to a remote database (ssh -L,
+a proxy, a container port mapping). The name "localhost" is trusted as written, so a hosts file or DNS entry that maps it elsewhere would
+also defeat the check. A local host and port therefore do NOT prove the destination is local, and a database name ending in "_test" does
+not prove the database is disposable.
 """
 import os
 import posixpath
@@ -15,9 +21,10 @@ from urllib.parse import parse_qsl, urlsplit
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
-# The only drivers whose connection arguments and environment handling were reviewed (psycopg 3 and psycopg2 both go through libpq;
-# plain "postgresql" is SQLAlchemy's alias for psycopg2). Exact match: any other driver (asyncpg, pg8000, ...) reads its settings differently.
-ALLOWED_DRIVERS = frozenset({"postgresql", "postgresql+psycopg", "postgresql+psycopg2"})
+# Exactly the driver this application is configured with (psycopg 3: config.py, .env.example, CI, README, requirements.txt) and the only one
+# whose connection arguments and environment handling were reviewed. Exact match: plain "postgresql" (SQLAlchemy's alias for psycopg2),
+# postgresql+psycopg2, asyncpg, pg8000, ... are refused; the application could not use them here anyway.
+ALLOWED_DRIVERS = frozenset({"postgresql+psycopg"})
 SAFE_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 SAFE_HOSTADDRS = frozenset({"127.0.0.1", "::1"})
 # A unix socket can only be on this machine, but a socket path is still caller-controlled text: only these standard directories are
@@ -26,8 +33,6 @@ SAFE_SOCKET_DIRECTORIES = frozenset({"/var/run/postgresql", "/run/postgresql", "
 # The ONLY query parameters accepted. Everything else (service, passfile, target_session_attrs, load_balance_hosts, port, dbname, user,
 # options, ...) is refused: a parameter this check does not understand could be routing the connection somewhere else.
 ALLOWED_QUERY_PARAMETERS = frozenset({"host", "hostaddr", "sslmode", "connect_timeout", "application_name", "client_encoding"})
-# Environment variables libpq falls back to; they can re-route a URL that names no host, or add an address to one that does.
-ROUTING_ENVIRONMENT = ("PGHOST", "PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE")
 
 
 class UnsafeDatabaseUrl(Exception):
@@ -61,7 +66,7 @@ def check_local_database_url(database_url: str, environ: Mapping[str, str] | Non
     environ = os.environ if environ is None else environ
     try:
         url = make_url(database_url)
-    except ArgumentError:
+    except (ArgumentError, ValueError):  # a malformed port ("host:", "host:5432,5433", "host:5432:6000") raises ValueError, not ArgumentError
         raise UnsafeDatabaseUrl("DATABASE_URL could not be parsed.") from None
     if url.drivername not in ALLOWED_DRIVERS:
         raise UnsafeDatabaseUrl(f"the database driver '{url.drivername}' is not supported here (allowed: {sorted(ALLOWED_DRIVERS)}).")

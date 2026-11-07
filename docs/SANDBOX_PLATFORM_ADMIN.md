@@ -10,12 +10,14 @@ refuses to run unless every check below passes. A refusal exits with code 2 and 
 | Check | Refuses when |
 |---|---|
 | Environment allowlist | `ENV` is anything but `development` or `test` (so `production` and any unknown value are refused), or `PADDLE_ENV` is not `sandbox` |
-| Database driver (the scheme of `DATABASE_URL`) | it is not exactly `postgresql`, `postgresql+psycopg` or `postgresql+psycopg2` (case-sensitive). Every other driver is refused, e.g. `postgresql+asyncpg`, `postgresql+pg8000`, `postgres`; their connection settings were not reviewed. The test-suite guard applies the same rule |
+| Database driver (the scheme of `DATABASE_URL`) | it is not exactly `postgresql+psycopg` (case-sensitive), the driver this application is configured with. Every other driver is refused, including plain `postgresql`, `postgresql+psycopg2`, `postgresql+asyncpg`, `postgresql+pg8000` and `postgres`. The test-suite guard applies the same rule |
 | Database connection routing (from `DATABASE_URL` and the `PG*` environment, no connection needed) | the URL could reach another machine. Fail-closed shared check (`app/db/url_safety.py`, also used by the test-suite guard): the host must be `localhost`, `127.0.0.1`, `::1`, a standard socket directory (`/var/run/postgresql`, `/run/postgresql`, `/tmp`, `/var/tmp`) or absent; refused are `?host=` beside or instead of a URL host, repeated or comma-separated hosts, a non-loopback `hostaddr`, `service`/`port`/`dbname`/`user`/`options` and any other unrecognised query parameter, and `PGHOST`, `PGHOSTADDR` or `PGSERVICE` pointing elsewhere |
 | Database name | it does not match `<words joined by _>_test` or `<words joined by _>_sandbox`: the LAST word must be exactly `test` or `sandbox`. `atla_test` and `atla_sandbox` pass; `atla_latest`, `atla_contest`, `atla_testing`, `atla_tests`, `atla_test_prod` and `atla` are refused |
 | `--confirm-database` | missing, or not exactly the database name from `DATABASE_URL` (one factor of several: it can never override the checks above) |
 | `--email` | no user, or more than one user, matches (matched case-insensitively) |
 | `--confirm-user-id` | missing (the tool then only prints the id), malformed, or not that user's id |
+
+**What these checks cannot prove.** They validate configuration, not the network. A URL port and the `PGPORT` environment variable are **not** validated for forwarding or tunnels: `localhost:5433` is accepted even if something on this machine (an `ssh -L` tunnel, a proxy, a container port mapping) forwards that port to a remote database. `localhost` is trusted as written, so a hosts-file or DNS entry that maps it elsewhere would also defeat the check. A local host and port therefore do **not** prove the destination is local, and a database name ending in `_test` or `_sandbox` does not prove the database is disposable. Check the database yourself before running the tool.
 
 Exit codes:
 

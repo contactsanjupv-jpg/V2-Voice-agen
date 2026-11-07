@@ -53,6 +53,12 @@ BYPASSES = [
     ("unknown parameter", "postgresql+psycopg://atla:hunter2@localhost/atla_test?something_new=1", {}),
     ("non-PostgreSQL driver", "mysql+pymysql://atla:hunter2@localhost/atla_test", {}),
     ("sqlite driver", "sqlite:///atla_test", {}),
+    ("plain postgresql driver (psycopg2 alias)", "postgresql://atla:hunter2@localhost/atla_test", {}),
+    ("postgresql+psycopg2 driver", "postgresql+psycopg2://atla:hunter2@localhost/atla_test", {}),
+    ("malformed port: empty", "postgresql+psycopg://atla:hunter2@localhost:/atla_test", {}),
+    ("malformed port: comma list", "postgresql+psycopg://atla:hunter2@localhost:5432,5433/atla_test", {}),
+    ("malformed port: two ports", "postgresql+psycopg://atla:hunter2@localhost:5432:6000/atla_test", {}),
+    ("malformed port: not a number", "postgresql+psycopg://atla:hunter2@localhost:abc/atla_test", {}),
     ("postgresql+asyncpg", "postgresql+asyncpg://atla:hunter2@localhost/atla_test", {}),
     ("postgresql+pg8000", "postgresql+pg8000://atla:hunter2@localhost/atla_test", {}),
     ("postgresql+psycopg2cffi", "postgresql+psycopg2cffi://atla:hunter2@localhost/atla_test", {}),
@@ -86,8 +92,6 @@ LOCAL = [
     ("PGHOST local, no URL host", "postgresql+psycopg://atla:hunter2@/atla_test", {"PGHOST": "/var/run/postgresql"}),
     ("PGHOST remote but the URL names a local host (the URL wins)", BASE.format(host="localhost:5432"), {"PGHOST": "prod-db.example.com"}),
     ("PGHOSTADDR loopback", BASE.format(host="localhost:5432"), {"PGHOSTADDR": "127.0.0.1"}),
-    ("plain postgresql:// driver", "postgresql://atla:hunter2@localhost/atla_test", {}),
-    ("postgresql+psycopg2 driver", "postgresql+psycopg2://atla:hunter2@localhost/atla_test", {}),
     ("PGREQUIRESSL is a security setting, not a destination", BASE.format(host="localhost:5432"), {"PGREQUIRESSL": "1"}),
 ]
 
@@ -277,18 +281,71 @@ def test_the_environment_variable_classes_do_not_overlap():
     assert sum(len(c) for c in classes) == len(set().union(*classes)), "a variable is classified twice"
 
 
-def test_only_the_three_reviewed_drivers_are_allowed():
+def test_only_the_applications_own_driver_is_allowed():
     from app.db.url_safety import ALLOWED_DRIVERS
 
-    assert ALLOWED_DRIVERS == {"postgresql", "postgresql+psycopg", "postgresql+psycopg2"}
-    for driver in sorted(ALLOWED_DRIVERS):
-        assert check_local_database_url(f"{driver}://atla:x@localhost/atla_test", {}).database == "atla_test"
+    assert ALLOWED_DRIVERS == {"postgresql+psycopg"}
+    assert check_local_database_url("postgresql+psycopg://atla:x@localhost/atla_test", {}).database == "atla_test"
+
+
+def test_the_allowed_driver_is_the_one_the_application_is_configured_with():
+    """Ties the allowlist to the real configuration so the two cannot drift apart again."""
+    from app.db.url_safety import ALLOWED_DRIVERS
+
+    repo = BACKEND.parent
+    for path in (BACKEND / ".env.example", repo / ".github" / "workflows" / "ci.yml", BACKEND / "README.md"):
+        text = path.read_text()
+        assert "postgresql+psycopg://" in text, f"{path.name} does not use the allowed driver"
+        assert "postgresql+psycopg2" not in text and "postgresql+asyncpg" not in text
+    assert "psycopg[binary]" in (BACKEND / "requirements.txt").read_text()
+    assert ALLOWED_DRIVERS == {"postgresql+psycopg"}
 
 
 @pytest.mark.parametrize("driver", [
-    "postgresql+asyncpg", "postgresql+pg8000", "postgresql+psycopg2cffi", "postgresql+pypostgresql", "postgres", "postgresqlx",
+    "postgresql", "postgresql+psycopg2", "postgresql+asyncpg", "postgresql+pg8000", "postgresql+psycopg2cffi", "postgresql+pypostgresql", "postgres", "postgresqlx",
     "postgresql+", "postgresql+psycopg+extra", "PostgreSQL+psycopg", "POSTGRESQL", "mysql", "mysql+pymysql", "sqlite", "oracle+oracledb",
 ])
 def test_every_other_driver_is_refused_with_a_message_naming_the_driver(driver):
     with pytest.raises(UnsafeDatabaseUrl, match="driver"):
         check_local_database_url(f"{driver}://atla:hunter2@localhost/atla_test", {})
+
+
+# ---------------- a malformed port is a deliberate refusal, never an unexpected error ----------------
+
+MALFORMED_PORTS = [
+    "postgresql+psycopg://atla:hunter2@localhost:/atla_test",
+    "postgresql+psycopg://atla:hunter2@localhost:5432,5433/atla_test",
+    "postgresql+psycopg://atla:hunter2@localhost:5432:6000/atla_test",
+]
+
+
+@pytest.mark.parametrize("url", MALFORMED_PORTS)
+def test_a_malformed_port_is_refused_with_the_safety_exception_not_a_valueerror(no_connection, monkeypatch, url):
+    with pytest.raises(UnsafeDatabaseUrl, match="could not be parsed") as shared:
+        check_local_database_url(url, {})
+    assert not isinstance(shared.value, ValueError)
+    _env(monkeypatch, {})
+    with pytest.raises(UnsafeTestDatabase, match="could not be parsed"):  # the suite guard: its own refusal type
+        check_test_database(url, "test")
+    with pytest.raises(script.Refused, match="could not be parsed"):  # the script: a refusal (exit 2), not "UNEXPECTED ERROR" (exit 1)
+        script.check_environment(_settings(url), "atla_test")
+
+
+@pytest.mark.parametrize("url", MALFORMED_PORTS)
+def test_the_admin_grant_script_exits_2_not_1_for_a_malformed_port(no_connection, monkeypatch, capsys, url):
+    monkeypatch.setattr(get_settings(), "DATABASE_URL", url)
+    assert script.main(["--email", "x@example.com", "--confirm-database", "atla_test", "--confirm-user-id", "1"]) == 2
+    out = capsys.readouterr().out
+    assert "could not be parsed" in out and "UNEXPECTED ERROR" not in out and "hunter2" not in out
+
+
+def test_url_ports_and_pgport_are_documented_as_unchecked():
+    """The limitation is stated where a reader will look for it, in the module and in the operator documentation."""
+    import app.db.url_safety as module
+
+    documentation = (BACKEND.parent / "docs" / "SANDBOX_PLATFORM_ADMIN.md").read_text()
+    for text, no_proof in ((module.__doc__, "do NOT prove"), (documentation, "do **not** prove")):
+        assert "PGPORT" in text and "tunnel" in text and no_proof in text
+    assert not hasattr(module, "ROUTING_ENVIRONMENT")
+    # and a forwarded-looking local port is, as documented, accepted: the check cannot see forwarding
+    assert check_local_database_url("postgresql+psycopg://atla:x@localhost:6543/atla_test", {"PGPORT": "6543"}).port == 6543
