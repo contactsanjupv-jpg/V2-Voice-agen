@@ -15,6 +15,7 @@ from app.core.security_headers import SecurityHeadersMiddleware
 from app.services import monitoring
 from app.api.v1.public_config import router as public_config_router
 from app.webhooks.retell import router as retell_webhook_router
+from app.webhooks.retell_inbound import router as retell_inbound_router
 from app.api.v1.account import router as account_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.dashboard import router as dashboard_router
@@ -59,6 +60,7 @@ app.include_router(activation_router)
 app.include_router(calls_router)
 app.include_router(leads_router)
 app.include_router(retell_webhook_router)
+app.include_router(retell_inbound_router)
 app.include_router(billing_router)
 app.include_router(admin_refunds_router)
 app.include_router(health_router)

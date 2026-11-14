@@ -28,6 +28,12 @@ class Business(Base, UUIDPKMixin, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     hours: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # IANA name ("America/Chicago"). NULL = not set yet: we then show UTC and omit the local clock from the prompt,
+    # rather than guess a zone for a business that has never told us.
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Structured weekly hours + date exceptions (services/hours_schedule.py). NULL or enabled=false = the owner has not
+    # opted in: calls behave exactly as before. `hours` above stays the free-text version the receptionist reads aloud.
+    hours_schedule: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[BusinessStatus] = mapped_column(
         Enum(BusinessStatus, name="business_status"), default=BusinessStatus.draft, nullable=False
     )

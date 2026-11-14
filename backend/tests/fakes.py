@@ -18,11 +18,13 @@ class FakePhone(PhoneProvider):
         self.reject_purchases = 0  # next N purchases are definitively rejected (HTTP 400)
         self.fail_unassign = 0
         self.assign_is_noop = False
+        self.webhooks: dict[str, str | None] = {}
         self._lock = threading.Lock()
 
     def _view(self, pid):
         n = self.numbers[pid]
-        return ProvisionedNumber(pid, pid, None, "US", 200, nickname=n["nickname"], inbound_agent_id=n["agent"])
+        return ProvisionedNumber(pid, pid, None, "US", 200, nickname=n["nickname"], inbound_agent_id=n["agent"],
+                                 inbound_webhook_url=self.webhooks.get(pid))
 
     def purchase_number(self, country, area_code, nickname):
         with self._lock:
@@ -53,6 +55,9 @@ class FakePhone(PhoneProvider):
         self.assigns.append((provider_phone_number_id, provider_agent_id))
         if not self.assign_is_noop:
             self.numbers[provider_phone_number_id]["agent"] = provider_agent_id
+
+    def set_inbound_webhook(self, provider_phone_number_id, url):
+        self.webhooks[provider_phone_number_id] = url
 
     def unassign_agent(self, provider_phone_number_id):
         if self.fail_unassign > 0:

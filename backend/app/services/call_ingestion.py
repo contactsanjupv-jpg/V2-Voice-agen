@@ -20,16 +20,19 @@ import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models.billing import FreeTestAllowance, UsageLedgerEntry
 from app.db.models.calls import Call, CallDirection, CallTranscript
+from app.db.models.business import Business
 from app.db.models.crm import Lead
 from app.db.models.platform import WebhookEvent
 from app.db.models.telephony import PhoneNumber, PhoneNumberStatus
 from app.db.models.voice_agent import Agent
-from app.services import free_test
+from app.services import free_test, owner_notifications
+from app.services.hours_schedule import received_after_hours
 from app.services.billing_state import ACTIVE_STATUSES, current_subscription
 
 logger = logging.getLogger("atla.calls")
@@ -95,7 +98,12 @@ def _get_or_create_call(db: Session, pcall: dict) -> Call:
     call = db.query(Call).filter(Call.retell_call_id == call_id).first()
     agent = None
     if pcall.get("agent_id"):
-        agent = db.query(Agent).filter(Agent.retell_agent_id == pcall["agent_id"]).first()
+        # The after-hours twin is the same receptionist to the owner: its calls belong to the same agent.
+        agent = (
+            db.query(Agent)
+            .filter(or_(Agent.retell_agent_id == pcall["agent_id"], Agent.closed_retell_agent_id == pcall["agent_id"]))
+            .first()
+        )
     if call is not None:
         # An event may only update a call owned by the tenant of the agent it names.
         if agent is not None and agent.organization_id != call.organization_id:
@@ -266,6 +274,18 @@ def _callback_phone(value) -> str | None:
     return text if 7 <= digits <= 15 else None
 
 
+def _after_hours_flag(db: Session, call: Call) -> bool | None:
+    """Closed/open at the call's OWN start time (not 'now'), by the schedule as it is when the lead is first created."""
+    if call.direction == CallDirection.test or call.agent_id is None:
+        return None
+    business = (
+        db.query(Business).join(Agent, Agent.business_id == Business.id).filter(Agent.id == call.agent_id).first()
+    )
+    if business is None:
+        return None
+    return received_after_hours(business.hours_schedule, business.timezone, call.started_at)
+
+
 def _upsert_lead(db: Session, call: Call, pcall: dict) -> None:
     analysis = pcall.get("call_analysis") if isinstance(pcall.get("call_analysis"), dict) else {}
     custom = analysis.get("custom_analysis_data") if isinstance(analysis.get("custom_analysis_data"), dict) else {}
@@ -275,22 +295,28 @@ def _upsert_lead(db: Session, call: Call, pcall: dict) -> None:
         return
     # The number the caller asked to be called back on wins; otherwise the number they called from.
     phone = _callback_phone(custom.get("callback_number")) or _clean_text(call.caller_number, 32)
+    lead = Lead(
+        organization_id=call.organization_id,
+        call_id=call.id,
+        received_after_hours=_after_hours_flag(db, call),
+        name=_clean_text(custom.get("caller_name"), 255),
+        phone=phone,
+        reason=_clean_text(custom.get("reason"), 2000),
+        summary=_clean_text(analysis.get("call_summary"), 4000),
+        source="test_call" if call.direction == CallDirection.test else "call",
+    )
     try:
         with db.begin_nested():
-            db.add(
-                Lead(
-                    organization_id=call.organization_id,
-                    call_id=call.id,
-                    name=_clean_text(custom.get("caller_name"), 255),
-                    phone=phone,
-                    reason=_clean_text(custom.get("reason"), 2000),
-                    summary=_clean_text(analysis.get("call_summary"), 4000),
-                    source="test_call" if call.direction == CallDirection.test else "call",
-                )
-            )
+            db.add(lead)
             db.flush()
     except IntegrityError:
-        pass  # a concurrent worker already created it
+        return  # a concurrent worker already created it (and queued its notification)
+    # Tell the owner, in this same transaction: the notification exists exactly when the lead does. Test calls are the
+    # owner's own browser test (or a prospect's free test), not a customer lead.
+    if call.direction != CallDirection.test:
+        owner_notifications.enqueue(
+            db, call.organization_id, owner_notifications.KIND_LEAD, str(lead.id), {"lead_id": str(lead.id)}
+        )
 
 
 def _upsert_usage(db: Session, call: Call, pcall: dict) -> None:
@@ -311,6 +337,10 @@ def _upsert_usage(db: Session, call: Call, pcall: dict) -> None:
             # Classified when the call was ADMITTED: it consumed the free allowance, so it stays free (recorded with
             # its real cost, never charged) even if its webhook arrives late, after the customer has subscribed.
             kind = "free_test"
+        elif call.admitted_as == "dev_test":
+            # Classified when the call was ADMITTED (persisted on the call), never from today's configuration: a late
+            # webhook, a retry or a worker with different settings cannot turn it into charged or free usage.
+            kind = "dev_test"
         else:
             # Not admitted through the free flow: a test call while subscribed spends credits like any call;
             # without a subscription it falls back to the free classification as before.

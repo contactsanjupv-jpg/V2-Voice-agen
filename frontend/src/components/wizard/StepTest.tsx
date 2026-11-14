@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Mic, PhoneOff, RotateCcw } from "lucide-react";
 import { RetellWebClient } from "retell-client-js-sdk";
 import { api, ApiError } from "@/lib/api";
+import { buildStartCallConfig } from "@/lib/retellCall";
+import { parseTestVariant } from "@/lib/testVariant";
 import { WizardActions, ErrorBanner } from "./WizardShell";
 
 type Phase = "idle" | "connecting" | "live" | "ended";
@@ -11,7 +14,18 @@ type Phase = "idle" | "connecting" | "live" | "ended";
 // A call counts as a real test once it has actually been live this long.
 const MIN_TALK_SECONDS = 5;
 
-export function StepTest({
+type StepTestProps = { orgId: string; agentId: string; onNext: () => void; onBack: () => void };
+
+// useSearchParams needs a Suspense boundary during static rendering; keeping it here means no page has to add one.
+export function StepTest(props: StepTestProps) {
+  return (
+    <Suspense fallback={null}>
+      <StepTestInner {...props} />
+    </Suspense>
+  );
+}
+
+function StepTestInner({
   orgId,
   agentId,
   onNext,
@@ -22,6 +36,8 @@ export function StepTest({
   onNext: () => void;
   onBack: () => void;
 }) {
+  // ?variant=closed tries the after-hours receptionist; anything else (or nothing) is the normal one.
+  const variant = parseTestVariant(useSearchParams().get("variant"));
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
@@ -72,7 +88,7 @@ export function StepTest({
     }
 
     try {
-      const session = await api.startTestCall(orgId, agentId);
+      const session = await api.startTestCall(orgId, agentId, variant);
       maxSecondsRef.current = session.max_seconds;
       setMaxSeconds(session.max_seconds);
 
@@ -95,7 +111,7 @@ export function StepTest({
         clientRef.current = null;
       });
 
-      await client.startCall({ accessToken: session.access_token, sampleRate: 24000 });
+      await client.startCall(buildStartCallConfig(session));
     } catch (err) {
       clientRef.current = null;
       setPhase("idle");

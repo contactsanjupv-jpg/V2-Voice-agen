@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models.billing import RefundRequest
+from app.db.models.notifications import OwnerNotification
 from app.db.models.platform import WebhookEvent
 from app.db.models.telephony import PhoneProvisioning
 
@@ -288,6 +289,14 @@ def alert_conditions(db: Session, now: datetime | None = None) -> list[Alert]:
     add("provisioning_blocked_payment", "critical", "Paid customers have no number: the telephony provider account needs a payment method or balance.",
         prov.filter(PhoneProvisioning.status == "blocked_payment").count())
     add("provisioning_failed", "warning", "Phone-number purchases failed.", prov.filter(PhoneProvisioning.status == "failed").count())
+
+    # Owner emails (new lead, service paused, payment failed, credits): still unsent after STUCK_MINUTES of retrying, or
+    # gave up in the last week. Either way the business owner is NOT being told. Usually SMTP.
+    notes = db.query(OwnerNotification)
+    undelivered = notes.filter(OwnerNotification.status == "pending", OwnerNotification.created_at <= stuck_before).count()
+    undelivered += notes.filter(OwnerNotification.status == "failed", OwnerNotification.updated_at >= now - timedelta(days=7)).count()
+    add("owner_notifications_undelivered", "critical",
+        "Owner emails (new leads, paused service, failed payments, low credits) are not being delivered. Check SMTP.", undelivered)
 
     refunds = db.query(RefundRequest)
     add("refund_stuck", "critical", "Refund requests are stuck before Paddle confirmed them.",

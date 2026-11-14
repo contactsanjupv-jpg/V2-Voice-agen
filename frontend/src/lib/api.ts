@@ -1,3 +1,5 @@
+import type { HoursSchedule } from "./hoursSchedule";
+import type { TestVariant } from "./testVariant";
 /**
  * Thin fetch wrapper for the Atla backend. Credentials are always included
  * so the session cookie round-trips — the backend is what enforces auth,
@@ -430,6 +432,10 @@ export interface BusinessProfile {
   website_url: string | null;
   description: string | null;
   hours: Record<string, string> | null;
+  timezone: string | null;
+  hours_schedule?: HoursSchedule | null;
+  /** False when the server's AFTER_HOURS_ROUTING_ENABLED switch is off: saved hours are kept but not used for calls. */
+  after_hours_routing_available?: boolean;
   status: string;
   services: KnowledgeText[];
   faqs: KnowledgeFaq[];
@@ -445,6 +451,9 @@ export interface BusinessProfileUpdate {
   website_url: string | null;
   description: string | null;
   hours: Record<string, string> | null;
+  timezone: string | null;
+  /** Omitted = unchanged on the server. */
+  hours_schedule?: HoursSchedule | null;
   services: { id?: string; text: string }[];
   faqs: { id?: string; question: string; answer: string }[];
   policies: { id?: string; text: string }[];
@@ -534,6 +543,7 @@ export const api = {
       description: string | null;
       hours: Record<string, string> | null;
       phone: string | null;
+      timezone: string | null;
       services: string[];
       faqs: { question: string; answer: string }[];
       policies: string[];
@@ -739,13 +749,19 @@ export const api = {
   startTestCall: (
     orgId: string,
     agentId: string,
+    variant: TestVariant = "normal",
   ) =>
     request<{
       call_id: string;
       access_token: string;
+      transport?: string;
+      ice_servers?: { urls: string | string[]; username?: string; credential?: string }[];
+      expires_at?: number;
+      url?: string;
       max_seconds: number;
+      is_free?: boolean;
     }>(
-      `/api/v1/orgs/${orgId}/agents/${agentId}/test-call`,
+      `/api/v1/orgs/${orgId}/agents/${agentId}/test-call?variant=${variant}`,
       {
         method: "POST",
       },

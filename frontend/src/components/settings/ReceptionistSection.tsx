@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { openingPreview } from "@/lib/disclosure";
 import { api, AgentConfig, describeError } from "@/lib/api";
 import { saveAgentSettings } from "@/lib/agentConfigSave";
 import { LANGUAGE_OPTIONS, loadedState, TASK_LABELS, validateReceptionist, type SaveOutcome } from "@/lib/settingsLogic";
@@ -15,6 +16,7 @@ export function ReceptionistSection({ orgId, businessId }: { orgId: string; busi
   const [outcome, setOutcome] = useState<SaveOutcome>({ state: "idle", message: null });
   const [form, setForm] = useState({ name: "", greeting: "", personality: "professional", language: "en-US", transfer_number: "" });
   const [tasks, setTasks] = useState<Record<string, boolean>>({});
+  const [businessName, setBusinessName] = useState("your business");
   const dirty = useRef(false);
 
   function apply(c: AgentConfig) {
@@ -25,6 +27,7 @@ export function ReceptionistSection({ orgId, businessId }: { orgId: string; busi
 
   useEffect(() => {
     let cancelled = false;
+    api.getBusinessProfile(orgId, businessId).then((p) => { if (!cancelled && p.name) setBusinessName(p.name); }).catch(() => {});
     api
       .getAgentConfig(orgId, businessId)
       .then((c) => {
@@ -73,6 +76,10 @@ export function ReceptionistSection({ orgId, businessId }: { orgId: string; busi
         <Group title="Identity" hint="Who callers hear and how they are greeted.">
           <Field label="Receptionist name"><input className={INPUT} value={form.name} maxLength={255} onChange={(e) => edit({ name: e.target.value })} /></Field>
           <Field label="Greeting"><textarea className={INPUT} rows={2} maxLength={500} value={form.greeting} onChange={(e) => edit({ greeting: e.target.value })} /></Field>
+          <p className="-mt-2 text-[12.5px] text-[var(--color-ink-soft)]" data-testid="opening-preview">
+            Callers first hear: <span className="italic">&ldquo;{openingPreview(businessName, form.greeting)}&rdquo;</span> The AI and
+            transcription notice is added to every call and can&apos;t be removed.
+          </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Personality">
               <select className={INPUT} value={form.personality} onChange={(e) => edit({ personality: e.target.value })}>

@@ -117,6 +117,36 @@ def _live_agents(org):
 
 # ---------- success ----------
 
+
+
+def test_two_organizations_each_receive_their_own_number(fake):
+    org_a = _org()
+    org_b = _org()
+
+    assert org_a != org_b
+
+    _webhook(org_a, f"sub_{uuid.uuid4().hex[:10]}")
+    _webhook(org_b, f"sub_{uuid.uuid4().hex[:10]}")
+
+    assert fake.purchases == 2
+    assert _numbers(org_a) == 1
+    assert _numbers(org_b) == 1
+
+    db = SessionLocal()
+    try:
+        number_a = db.query(PhoneNumber).filter(
+            PhoneNumber.organization_id == uuid.UUID(org_a)
+        ).one()
+
+        number_b = db.query(PhoneNumber).filter(
+            PhoneNumber.organization_id == uuid.UUID(org_b)
+        ).one()
+
+        assert number_a.number != number_b.number
+        assert number_a.retell_phone_number_id != number_b.retell_phone_number_id
+    finally:
+        db.close()
+
 def test_a_confirmed_active_subscription_buys_one_number_and_is_not_live(fake):
     org, sid = _org(), f"sub_{uuid.uuid4().hex[:10]}"
     _webhook(org, sid)

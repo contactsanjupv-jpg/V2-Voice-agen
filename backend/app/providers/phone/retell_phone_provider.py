@@ -12,6 +12,14 @@ from app.providers.phone.phone_provider import PhoneProvider, ProvisionedNumber
 from app.providers.retell_client import RetellAPIError, RetellClient
 
 
+def _first_inbound_agent(raw: dict) -> str | None:
+    """Newer responses list weighted `inbound_agents`; accept either shape (UNVERIFIED which a live account returns)."""
+    agents = raw.get("inbound_agents")
+    if isinstance(agents, list) and agents and isinstance(agents[0], dict):
+        return agents[0].get("agent_id")
+    return None
+
+
 def _to_number(raw: dict, country: str = "US", area_code: str | None = None) -> ProvisionedNumber:
     return ProvisionedNumber(
         provider_phone_number_id=raw["phone_number"],
@@ -20,7 +28,8 @@ def _to_number(raw: dict, country: str = "US", area_code: str | None = None) -> 
         country=country,
         monthly_cost_cents=raw.get("monthly_cost_cents"),
         nickname=raw.get("nickname"),
-        inbound_agent_id=raw.get("inbound_agent_id"),
+        inbound_agent_id=raw.get("inbound_agent_id") or _first_inbound_agent(raw),
+        inbound_webhook_url=raw.get("inbound_webhook_url") or None,
     )
 
 
@@ -54,6 +63,9 @@ class RetellPhoneProvider(PhoneProvider):
     def assign_agent(self, provider_phone_number_id: str, provider_agent_id: str, direction: str = "inbound") -> None:
         field = "inbound_agent_id" if direction == "inbound" else "outbound_agent_id"
         self.client.request("PATCH", f"/update-phone-number/{provider_phone_number_id}", json={field: provider_agent_id})
+
+    def set_inbound_webhook(self, provider_phone_number_id: str, url: str | None) -> None:
+        self.client.request("PATCH", f"/update-phone-number/{provider_phone_number_id}", json={"inbound_webhook_url": url})
 
     def unassign_agent(self, provider_phone_number_id: str) -> None:
         self.client.request("PATCH", f"/update-phone-number/{provider_phone_number_id}", json={"inbound_agent_id": None})

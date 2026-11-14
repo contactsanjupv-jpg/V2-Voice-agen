@@ -51,6 +51,11 @@ class Agent(Base, UUIDPKMixin, TimestampMixin):
     # without one has no instructions and no business knowledge.
     retell_llm_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
 
+    # The after-hours twin: same voice and knowledge, NO transfer tool. Used by inbound routing whenever the business
+    # is not positively known to be open. Created/updated with the agent only for businesses that opted in.
+    closed_retell_agent_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    closed_retell_llm_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     greeting: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     personality: Mapped[str] = mapped_column(String(64), default="professional", nullable=False)

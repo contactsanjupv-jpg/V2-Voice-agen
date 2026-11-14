@@ -11,6 +11,7 @@ class ProvisionedNumber:
     monthly_cost_cents: int | None
     nickname: str | None = None
     inbound_agent_id: str | None = None
+    inbound_webhook_url: str | None = None
 
 
 class PhoneProvider(ABC):
@@ -32,6 +33,10 @@ class PhoneProvider(ABC):
 
     @abstractmethod
     def assign_agent(self, provider_phone_number_id: str, provider_agent_id: str, direction: str = "inbound") -> None: ...
+
+    def set_inbound_webhook(self, provider_phone_number_id: str, url: str | None) -> None:
+        """Register (or with None clear) the per-call inbound webhook. Only used for after-hours routing."""
+        raise NotImplementedError
 
     @abstractmethod
     def unassign_agent(self, provider_phone_number_id: str) -> None: ...

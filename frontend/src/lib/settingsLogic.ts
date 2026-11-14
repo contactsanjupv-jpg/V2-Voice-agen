@@ -4,6 +4,8 @@
  */
 import { ApiError, describeError } from "./api";
 import { SETTINGS_BASE, SETTINGS_BILLING_HREF } from "./settingsRoutes";
+import { greetingProblem } from "./disclosure";
+import { scheduleProblem, type HoursSchedule } from "./hoursSchedule";
 import type { BusinessProfile, BusinessProfileUpdate, CallHandling, Voice } from "./api";
 
 export type SaveState = "idle" | "saving" | "saved" | "sync_failed" | "not_applied" | "error";
@@ -159,6 +161,10 @@ export interface ProfileDraft {
   address: string;
   website_url: string;
   description: string;
+  /** IANA name, or "" when the business hasn't set one. */
+  timezone: string;
+  /** Structured opening hours for after-hours routing; null = the owner hasn't set any up. */
+  schedule: HoursSchedule | null;
   hours: { label: string; value: string }[];
   services: { id?: string; text: string }[];
   faqs: { id?: string; question: string; answer: string }[];
@@ -189,6 +195,8 @@ export function draftFromProfile(p: BusinessProfile): ProfileDraft {
     address: p.address ?? "",
     website_url: p.website_url ?? "",
     description: p.description ?? "",
+    timezone: p.timezone ?? "",
+    schedule: p.hours_schedule ?? null,
     hours: Object.entries(p.hours ?? {}).map(([label, value]) => ({ label, value: String(value) })),
     services: p.services.map((s) => ({ id: s.id, text: s.text })),
     faqs: p.faqs.map((f) => ({ id: f.id, question: f.question, answer: f.answer })),
@@ -212,6 +220,9 @@ export function validateProfile(d: ProfileDraft): string | null {
     }
   }
   if (d.description.length > 4000) return "Description is too long (4000 characters max).";
+  const sp = scheduleProblem(d.schedule);
+  if (sp) return sp;
+  if (d.schedule?.enabled && !d.timezone) return "Choose your timezone before turning on opening hours.";
   for (const h of d.hours) {
     if ((h.label.trim() === "") !== (h.value.trim() === "")) return "Each hours row needs both a day and its hours.";
   }
@@ -248,6 +259,7 @@ export function buildProfileUpdate(original: BusinessProfile, d: ProfileDraft): 
   const stillPresent = new Set([...d.services, ...d.policies, ...d.faqs].map((x) => x.id).filter(Boolean) as string[]);
   const delete_ids = d.removedIds.filter((id) => loaded.has(id) && !stillPresent.has(id));
 
+  const scheduleChanged = JSON.stringify(d.schedule) !== JSON.stringify(original.hours_schedule ?? null);
   return {
     name: d.name.trim(),
     industry: nz(d.industry),
@@ -255,6 +267,8 @@ export function buildProfileUpdate(original: BusinessProfile, d: ProfileDraft): 
     address: nz(d.address),
     website_url: nz(d.website_url),
     description: nz(d.description),
+    timezone: nz(d.timezone),
+    ...(scheduleChanged ? { hours_schedule: d.schedule } : {}), // untouched = omitted, so the server keeps it
     hours: Object.keys(hours).length ? hours : null,
     services,
     faqs,
@@ -284,6 +298,8 @@ export function validateReceptionist(r: {
   if (!r.name.trim()) return "Receptionist name is required.";
   if (!r.voice_id) return "Choose a voice.";
   if (r.greeting.length > 500) return "Greeting must be 500 characters or fewer.";
+  const gp = greetingProblem(r.greeting);
+  if (gp) return gp;
   const tn = r.transfer_number.replace(/[\s().-]/g, "");
   if (r.tasks.transfer_calls && !tn) return "Enter a transfer number, or turn off call transfer.";
   if (tn && !/^\+[1-9]\d{6,14}$/.test(tn)) return "Transfer number must be a full number like +14155551234.";

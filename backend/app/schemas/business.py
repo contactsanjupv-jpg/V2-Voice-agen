@@ -4,6 +4,9 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
+from app.services.business_time import clean_timezone
+from app.services.hours_schedule import validate_schedule
+
 
 class ImportWebsiteRequest(BaseModel):
     url: HttpUrl
@@ -28,6 +31,7 @@ class BusinessReviewOut(BaseModel):
     description: str | None
     hours: dict | None
     phone: str | None
+    timezone: str | None = None
     status: str
     raw_import_snapshot: dict | None
 
@@ -47,7 +51,14 @@ class BusinessApproveRequest(BaseModel):
     description: str | None = None
     hours: dict | None = None
     phone: str | None = None
+    timezone: str | None = None
     services: list[str] = []
+
+    @field_validator("timezone")
+    @classmethod
+    def _tz(cls, v):
+        return clean_timezone(v)
+
     faqs: list[dict] = []
     policies: list[str] = []
 
@@ -106,6 +117,8 @@ class BusinessProfileUpdate(BaseModel):
     website_url: str | None = None
     description: str | None = None
     hours: dict[str, str] | None = None
+    timezone: str | None = None
+    hours_schedule: dict | None = None  # omitted = unchanged; {"enabled": false, ...} turns after-hours routing off
     services: list[TextItemIn] = Field(default_factory=list, max_length=50)
     faqs: list[FaqIn] = Field(default_factory=list, max_length=50)
     policies: list[TextItemIn] = Field(default_factory=list, max_length=30)
@@ -155,6 +168,16 @@ class BusinessProfileUpdate(BaseModel):
             raise ValueError("Website must be a full http(s) address like https://example.com")
         return v
 
+    @field_validator("timezone")
+    @classmethod
+    def _timezone(cls, v):
+        return clean_timezone(v)
+
+    @field_validator("hours_schedule")
+    @classmethod
+    def _hours_schedule(cls, v):
+        return validate_schedule(v)
+
     @field_validator("hours")
     @classmethod
     def _hours(cls, v):
@@ -194,6 +217,10 @@ class BusinessProfileOut(BaseModel):
     website_url: str | None
     description: str | None
     hours: dict | None
+    timezone: str | None = None
+    hours_schedule: dict | None = None
+    # Server-side switch (AFTER_HOURS_ROUTING_ENABLED). False = saved hours do not change how calls are answered.
+    after_hours_routing_available: bool = False
     status: str
     services: list[TextItemOut]
     faqs: list[FaqOut]

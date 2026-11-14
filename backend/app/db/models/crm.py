@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +33,9 @@ class Lead(Base, UUIDPKMixin, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[LeadStatus] = mapped_column(Enum(LeadStatus, name="lead_status"), default=LeadStatus.new, nullable=False)
     source: Mapped[str] = mapped_column(String(64), default="call", nullable=False)
+    # True = the call began outside the business's hours, False = inside, NULL = unknown / owner has no schedule.
+    # Computed once from the call's own start time and the schedule at that moment; never recomputed.
+    received_after_hours: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class AppointmentStatus(str, enum.Enum):

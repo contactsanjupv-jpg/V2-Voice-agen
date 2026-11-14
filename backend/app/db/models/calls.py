@@ -40,6 +40,11 @@ class Call(Base, UUIDPKMixin, TimestampMixin):
     # NEVER a public URL — a storage key we resolve to a short-lived signed URL at read time.
     recording_storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # How a TEST call was admitted, recorded at admission so its usage classification can never depend on the
+    # environment at webhook time. Only ever "dev_test" (local sandbox clone, ALLOW_UNMETERED_LOCAL_TEST_CALLS); NULL
+    # for every other call, including all existing rows. Provider metadata is NOT relied on: nothing here verifies
+    # that Retell echoes it back.
+    admitted_as: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class CallTranscript(Base, UUIDPKMixin, TimestampMixin):

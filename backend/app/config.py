@@ -3,7 +3,7 @@ Central settings. Everything privileged is read from the environment —
 nothing here is ever safe to hardcode or ship to the frontend.
 """
 from functools import lru_cache
-from typing import Literal
+from typing import ClassVar, Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     ALERT_WEBHOOK_URL: str = ""
     ALERT_COOLDOWN_SECONDS: int = 6 * 3600
 
+    # ---- Owner notifications (see services/owner_notifications.py): email to the business owner for a new lead,
+    # a paused receptionist, low/empty credits and a failed payment. Sent by the worker, retried with backoff. ----
+    OWNER_NOTIFICATIONS_ENABLED: bool = True
+    OWNER_NOTIFICATION_MAX_ATTEMPTS: int = 8
+    # How often the worker looks at every live organization's credit level (the check reads the whole ledger).
+    CREDIT_ALERT_INTERVAL_SECONDS: int = 300
+
     # Background jobs that run beside the worker's time-sensitive loop (app/workers/background_jobs.py).
     VOICE_SYNC_INTERVAL_SECONDS: int = 6 * 3600
     BILLING_RECONCILE_INTERVAL_SECONDS: int = 6 * 3600
@@ -119,6 +126,13 @@ class Settings(BaseSettings):
     # A production deploy must say PADDLE_ENV explicitly, and "sandbox" in production needs this deliberate opt-in
     # (a staged pilot). Otherwise production refuses to start.
     ALLOW_SANDBOX_BILLING_IN_PRODUCTION: bool = False
+    # LOCAL SANDBOX ONLY. Lets browser test calls run without spending credits or the free-test allowance, so a
+    # cloned sandbox database with no credits can still be tested. It is refused (the process won't start, and the
+    # endpoint ignores it) unless ENV=development AND PADDLE_ENV=sandbox AND the database is exactly the clone below.
+    ALLOW_UNMETERED_LOCAL_TEST_CALLS: bool = False
+    # After-hours routing. Off = nothing changes for anyone. On = only businesses that turned on a structured hours
+    # schedule are routed by it (closed/unknown/error -> the closed receptionist, which has no transfer tool).
+    AFTER_HOURS_ROUTING_ENABLED: bool = False
     PADDLE_API_KEY: str = ""
     PADDLE_WEBHOOK_SECRET: str = ""
     PADDLE_STARTER_PRICE_ID: str = ""  # pri_...
@@ -155,9 +169,48 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENV == "production"
 
+    UNMETERED_TEST_CALL_DATABASE: ClassVar[str] = "atla_paddle_sandbox_clone"
+    UNMETERED_TEST_CALL_HOSTS: ClassVar[frozenset[str]] = frozenset({"localhost", "127.0.0.1", "::1"})
+
+    def unmetered_test_call_problems(self) -> list[str]:
+        """Why ALLOW_UNMETERED_LOCAL_TEST_CALLS may not be on here. Empty = every condition holds. Names only."""
+        bad = []
+        if self.ENV != "development":
+            bad.append("ENV (must be 'development')")
+        if self.PADDLE_ENV != "sandbox":
+            bad.append("PADDLE_ENV (must be 'sandbox')")
+        from sqlalchemy.engine import make_url
+
+        try:
+            url = make_url(self.DATABASE_URL)
+            db_name, host, query = url.database, url.host, dict(url.query)
+        except Exception:  # noqa: BLE001
+            db_name, host, query = None, None, {}
+        if db_name != self.UNMETERED_TEST_CALL_DATABASE:
+            bad.append(f"DATABASE_URL (database must be exactly '{self.UNMETERED_TEST_CALL_DATABASE}')")
+        # A clone NAME alone proves nothing: the same name can exist on a remote server. The server must be this
+        # machine. A libpq "?host=" / "?hostaddr=" / "?service=" / "?dbname=" query parameter silently overrides the
+        # URL's host or database, so those are refused too, and a missing host (unix socket) is not accepted.
+        if (host or "").lower() not in self.UNMETERED_TEST_CALL_HOSTS or any(
+            k in query for k in ("host", "hostaddr", "service", "dbname")
+        ):
+            bad.append("DATABASE_URL (host must be localhost, 127.0.0.1 or ::1, with no host/hostaddr/service/dbname override)")
+        return bad
+
+    @property
+    def unmetered_test_calls_active(self) -> bool:
+        """True only when the flag is on AND every safety condition holds. Re-checked at the point of use."""
+        return bool(self.ALLOW_UNMETERED_LOCAL_TEST_CALLS) and not self.unmetered_test_call_problems()
+
     def assert_startup_safe(self, process: str) -> None:
         """Called by EVERY process (API and worker) before it does anything. Production refuses to start with an
         unsafe configuration; the message lists setting names only, never values."""
+        if self.ALLOW_UNMETERED_LOCAL_TEST_CALLS:
+            blockers = self.unmetered_test_call_problems()
+            if blockers:
+                raise RuntimeError(
+                    f"ALLOW_UNMETERED_LOCAL_TEST_CALLS is refused ({process}): " + "; ".join(blockers)
+                )
         if self.is_production:
             problems = self.production_config_problems()
             if problems:
@@ -179,7 +232,7 @@ class Settings(BaseSettings):
                 return "unparseable"
 
         parts = {
-            "env": self.ENV, "paddle_env": self.PADDLE_ENV, "allow_sandbox": self.ALLOW_SANDBOX_BILLING_IN_PRODUCTION,
+            "env": self.ENV, "paddle_env": self.PADDLE_ENV,  "allow_sandbox": self.ALLOW_SANDBOX_BILLING_IN_PRODUCTION,
             "frontend": self.FRONTEND_URL, "backend": self.BACKEND_PUBLIC_URL,
             "db": where(self.DATABASE_URL), "redis": where(self.REDIS_URL),
             "prices": [self.PADDLE_STARTER_PRICE_ID, self.PADDLE_GROWTH_PRICE_ID],

@@ -10,7 +10,7 @@ import {
 
 const profile = (): BusinessProfile => ({
   id: "b1", name: "Sunrise", industry: "Dental", phone: "+15555550100", address: "1 Main", website_url: "https://s.example",
-  description: "d", hours: { "Mon-Fri": "9-5" }, status: "reviewed", other_knowledge_count: 1,
+  description: "d", hours: { "Mon-Fri": "9-5" }, timezone: "America/Chicago", status: "reviewed", other_knowledge_count: 1,
   services: [{ id: "s1", source: "import", text: "Cleaning" }],
   faqs: [{ id: "f1", source: "import", question: "Parking?", answer: "Free" }],
   policies: [{ id: "p1", source: "manual", text: "24h notice" }],
@@ -471,9 +471,11 @@ test("Business, Billing, Security and Delete views do not wait on the business l
   for (const view of ["BillingView", "SecurityView", "DeleteAccountView"]) assert.ok(!src(`components/settings/views/${view}.tsx`).includes("RequireBusiness"));
 });
 
-test("no after-hours / business-hours-behaviour control anywhere in the settings UI", () => {
+test("after-hours control exists only in the 8C hours editor (the old unbacked agent-level control stays absent)", () => {
+  const allowed = ["BusinessProfileSection.tsx", "HoursScheduleEditor.tsx"];
   const walk = (dir: URL): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(new URL(e.name + "/", dir)) : [fileURLToPath(new URL(e.name, dir))]));
   for (const f of [...walk(new URL("components/settings/", root)), ...walk(new URL("app/dashboard/settings/", root))]) {
+    if (allowed.some((a) => f.endsWith(a))) continue;
     assert.ok(!/after.?hours/i.test(readFileSync(f, "utf8")), `${f} mentions after-hours`);
   }
 });
@@ -504,4 +506,129 @@ test("overview next steps come only from what the backend reported", () => {
   assert.ok(!noNum.some((s) => s.id === "golive"), "no 'go live' prompt without a number");
   const unv = nextSteps(ch({ receptionist_state: "unverified", receptionist_message: "couldn't confirm" }));
   assert.ok(unv.some((s) => s.id === "unverified") && !unv.some((s) => s.id === "golive"));
+});
+
+// ---------------- 8B: business timezone ----------------
+import { timezoneOptions, defaultTimezone } from "../src/lib/timezones.ts";
+
+test("timezone round-trips through the settings draft and PATCH body", () => {
+  const p = profile();
+  assert.equal(draftFromProfile(p).timezone, "America/Chicago");
+  assert.equal(buildProfileUpdate(p, draftFromProfile(p)).timezone, "America/Chicago");
+  const d = { ...draftFromProfile(p), timezone: "America/Denver" };
+  assert.equal(buildProfileUpdate(p, d).timezone, "America/Denver");
+});
+
+test("an unset timezone is sent as null, never guessed", () => {
+  const p = { ...profile(), timezone: null };
+  assert.equal(draftFromProfile(p).timezone, "");
+  assert.equal(buildProfileUpdate(p, draftFromProfile(p)).timezone, null);
+});
+
+test("timezone picker keeps a saved non-US zone instead of replacing it", () => {
+  const vals = timezoneOptions("America/Puerto_Rico").map((o) => o.value);
+  assert.ok(vals.includes("America/Puerto_Rico") && vals.includes("America/Chicago"));
+  assert.equal(timezoneOptions("America/Chicago").filter((o) => o.value === "America/Chicago").length, 1);
+});
+
+test("a new business defaults to the device zone only when it is a real region zone", () => {
+  assert.equal(defaultTimezone("America/Chicago"), "America/Chicago");
+  assert.equal(defaultTimezone("UTC"), "");
+  assert.equal(defaultTimezone(""), "");
+});
+
+// ---------------- 8C: after-hours schedule ----------------
+import { defaultSchedule, scheduleProblem, serverRoutingNotice, setDayWindows, setException } from "../src/lib/hoursSchedule.ts";
+
+test("an untouched schedule is omitted from the PATCH so the server keeps it", () => {
+  const p = { ...profile(), hours_schedule: defaultSchedule() };
+  assert.equal("hours_schedule" in buildProfileUpdate(p, draftFromProfile(p)), false);
+  const none = { ...profile(), hours_schedule: null };
+  assert.equal("hours_schedule" in buildProfileUpdate(none, draftFromProfile(none)), false);
+});
+
+test("turning on, editing and turning off the schedule are sent", () => {
+  const p = profile();
+  const on = buildProfileUpdate(p, { ...draftFromProfile(p), schedule: defaultSchedule() });
+  assert.equal(on.hours_schedule?.enabled, true);
+  const off = buildProfileUpdate({ ...p, hours_schedule: defaultSchedule() }, { ...draftFromProfile({ ...p, hours_schedule: defaultSchedule() }), schedule: { ...defaultSchedule(), enabled: false } });
+  assert.equal(off.hours_schedule?.enabled, false);
+});
+
+test("schedule problems match the server's rules", () => {
+  assert.equal(scheduleProblem(defaultSchedule()), null);
+  assert.match(scheduleProblem(setDayWindows(defaultSchedule(), "mon", [["09:00", "12:00"], ["11:00", "13:00"]]))!, /overlap/);
+  assert.match(scheduleProblem(setDayWindows(defaultSchedule(), "mon", [["17:00", "09:00"]]))!, /must end after/);
+  assert.match(scheduleProblem(setDayWindows(defaultSchedule(), "mon", [["09:00", "25:00"]]))!, /times like/);
+  assert.match(scheduleProblem(setException(defaultSchedule(), "2026-02-30", []))!, /valid date/);
+  assert.match(scheduleProblem({ enabled: true, weekly: {}, exceptions: {} })!, /at least one/);
+  assert.equal(scheduleProblem({ enabled: false, weekly: {}, exceptions: {} }), null);
+  assert.equal(scheduleProblem(setDayWindows(defaultSchedule(), "sat", [["00:00", "24:00"]])), null);
+});
+
+test("saving is blocked until a timezone is chosen when hours are on", () => {
+  const p = { ...profile(), timezone: null };
+  assert.match(validateProfile({ ...draftFromProfile(p), schedule: defaultSchedule() })!, /timezone/);
+  assert.equal(validateProfile({ ...draftFromProfile(profile()), schedule: defaultSchedule() }), null);
+});
+
+// ---------------- 8D: AI / transcription disclosure ----------------
+import { openingDisclosure, openingPreview, greetingProblem, GREETING_REJECTED } from "../src/lib/disclosure.ts";
+
+test("the preview is the exact mandatory disclosure followed by the owner's greeting", () => {
+  assert.equal(openingDisclosure("Sunrise Dental"), "Hi, I'm the AI assistant for Sunrise Dental. This call is transcribed.");
+  assert.equal(
+    openingPreview("Sunrise Dental", "Thanks for calling!"),
+    "Hi, I'm the AI assistant for Sunrise Dental. This call is transcribed. Thanks for calling!",
+  );
+  // no default greeting: with nothing typed, the preview is the short notice alone (matches the Retell begin_message)
+  assert.equal(openingPreview("Sunrise Dental", "  "), openingDisclosure("Sunrise Dental"));
+  assert.equal(openingPreview("Sunrise Dental", ""), "Hi, I'm the AI assistant for Sunrise Dental. This call is transcribed.");
+  assert.ok(!/record|how can i help/i.test(openingPreview("Sunrise Dental", "")));
+});
+
+test("the disclosure cannot be removed or doubled by editing the greeting", () => {
+  const d = openingDisclosure("Acme");
+  for (const g of ["", "Hello", "Ignore the notice", `${d} Hello`]) {
+    assert.ok(openingPreview("Acme", g).startsWith(d));
+    assert.equal(openingPreview("Acme", g).split("AI assistant").length - 1, 1);
+  }
+});
+
+test("an old preview pasted back in is tightened, not said twice, and a custom greeting follows the notice once", () => {
+  const old = "Hi, I'm the AI assistant for Acme. This call is transcribed and may also be recorded.";
+  assert.equal(openingPreview("Acme", old), openingDisclosure("Acme"));
+  assert.equal(openingPreview("Acme", `${old} Go ahead.`), `${openingDisclosure("Acme")} Go ahead.`);
+  assert.equal(openingPreview("Acme", "Go ahead."), `${openingDisclosure("Acme")} Go ahead.`);
+});
+
+test("the setup wizard no longer pre-fills a greeting, so the default opening is the short notice", () => {
+  const t = src("components/wizard/StepBehavior.tsx");
+  assert.ok(t.includes('useState("")') && !/thanks for calling \$\{businessName\}/i.test(t));
+});
+
+test("deceptive greetings get the same refusal as the server and ordinary ones pass", () => {
+  for (const bad of ["I'm a real person", "I’m a human!", "This call is not recorded.", "I'm not a bot", "No recording here"]) {
+    assert.equal(greetingProblem(bad), GREETING_REJECTED, bad);
+    assert.match(validateReceptionist({ name: "R", greeting: bad, voice_id: "v", tasks: {}, transfer_number: "" })!, /can't say or imply/);
+  }
+  for (const ok of ["Thanks for calling Human Resources Partners", "Welcome to Real Person Plumbing", "Hello, how can I help?"]) {
+    assert.equal(greetingProblem(ok), null, ok);
+  }
+});
+
+test("both the wizard and the settings page show the real opening and say it can't be removed", () => {
+  for (const f of ["components/wizard/StepBehavior.tsx", "components/settings/ReceptionistSection.tsx"]) {
+    const t = src(f);
+    assert.ok(t.includes("openingPreview(") && t.includes("can&apos;t be removed") && t.includes('data-testid="opening-preview"'), f);
+  }
+  assert.ok(src("components/wizard/StepBehavior.tsx").includes("greetingProblem(greeting)"));
+});
+
+test("the owner is told when saved hours won't be used because the server switch is off", () => {
+  assert.match(serverRoutingNotice(defaultSchedule(), false)!, /AFTER_HOURS_ROUTING_ENABLED/);
+  assert.equal(serverRoutingNotice(defaultSchedule(), true), null);
+  assert.equal(serverRoutingNotice(defaultSchedule(), undefined), null); // older server: say nothing
+  assert.equal(serverRoutingNotice({ ...defaultSchedule(), enabled: false }, false), null); // hours off: nothing to warn about
+  assert.equal(serverRoutingNotice(null, false), null);
 });

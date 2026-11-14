@@ -1,11 +1,17 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class WebCallSession:
+    """Everything the browser needs to join one web call (Retell v3 create-web-call response)."""
+
     provider_call_id: str
-    access_token: str  # handed to the frontend so it can join the WebRTC call
+    access_token: str  # authorizes the browser to join; short-lived, never logged or stored
+    transport: str = "gateway"  # which client transport to use ("gateway" in v3; the SDK defaults to livekit if omitted!)
+    ice_servers: list[dict] = field(default_factory=list)  # may carry TURN credentials: never logged or stored
+    expires_at: int | None = None  # epoch milliseconds when access_token stops working
+    url: str | None = None  # only for transports that need one (livekit)
 
 
 @dataclass

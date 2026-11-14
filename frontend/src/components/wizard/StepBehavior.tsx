@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { greetingProblem, openingPreview } from "@/lib/disclosure";
 import { WizardActions, ErrorBanner } from "./WizardShell";
 
 const TASK_OPTIONS: { key: string; label: string }[] = [
@@ -32,7 +33,7 @@ export function StepBehavior({
   onBack: () => void;
 }) {
   const [name, setName] = useState(`${businessName} Receptionist`);
-  const [greeting, setGreeting] = useState(`Hi, thanks for calling ${businessName}, how can I help?`);
+  const [greeting, setGreeting] = useState("");
   const [personality, setPersonality] = useState("Professional");
   const [tasks, setTasks] = useState<Record<string, boolean>>({
   answer_questions: true,
@@ -50,6 +51,8 @@ export function StepBehavior({
 
   async function handleNext() {
     setError(null);
+    const gp = greetingProblem(greeting);
+    if (gp) return setError(gp);
     setLoading(true);
     try {
       const agent = await api.upsertAgent(orgId, businessId, {
@@ -89,6 +92,10 @@ export function StepBehavior({
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-ink-soft)]">Greeting</label>
           <textarea value={greeting} onChange={(e) => setGreeting(e.target.value)} rows={2} className={`${inputClass} resize-none`} />
+          <p className="mt-1.5 text-[12.5px] text-[var(--color-ink-soft)]" data-testid="opening-preview">
+            Callers first hear: <span className="italic">&ldquo;{openingPreview(businessName, greeting)}&rdquo;</span> The AI and
+            transcription notice is added to every call and can&apos;t be removed.
+          </p>
         </div>
 
         <div>

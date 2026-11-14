@@ -52,7 +52,7 @@ def test_a_new_prospect_gets_exactly_one_free_call_and_is_told_it_is_free(fake):
     assert first.status_code == 200 and first.json()["is_free"] is True
     second = c.post(url)
     assert second.status_code == 402 and second.json()["detail"] == FREE_MESSAGE
-    assert len(fake.to("/v2/create-web-call")) == 1  # the refused attempt cost nothing
+    assert len(fake.to("/v3/create-web-call")) == 1  # the refused attempt cost nothing
 
 
 def test_repeated_requests_and_refreshes_never_reset_the_allowance(fake):
@@ -62,7 +62,7 @@ def test_repeated_requests_and_refreshes_never_reset_the_allowance(fake):
         assert c.post(url).status_code == 402
     assert _allowances(org) == 1
     assert c.post(url).status_code == 402
-    assert len(fake.to("/v2/create-web-call")) == 1
+    assert len(fake.to("/v3/create-web-call")) == 1
 
 
 def test_concurrent_requests_cannot_spend_the_free_call_twice(fake):
@@ -77,7 +77,7 @@ def test_concurrent_requests_cannot_spend_the_free_call_twice(fake):
     [t.start() for t in threads]
     [t.join() for t in threads]
     assert sorted(codes).count(200) == 1 and codes.count(402) == 7, codes
-    assert len(fake.to("/v2/create-web-call")) == 1 and _allowances(org) == 1
+    assert len(fake.to("/v3/create-web-call")) == 1 and _allowances(org) == 1
 
 
 def test_the_same_user_cannot_collect_a_free_call_in_a_second_organization():
@@ -125,7 +125,7 @@ def test_concurrent_reservations_in_the_database_yield_one_winner():
 
 def test_a_call_the_provider_definitely_refused_gives_the_free_call_back(fake):
     c, org, url = _ready_org()
-    fake.fail["/v2/create-web-call"] = 1
+    fake.fail["/v3/create-web-call"] = 1
     assert c.post(url).status_code == 502
     assert _allowances(org) == 0
     assert c.post(url).status_code == 200  # nothing was spent, so they still have their free call
@@ -185,7 +185,7 @@ def test_a_subscriber_with_no_credits_left_cannot_start_a_test_call(fake, monkey
     add_usage(org, 10 * 60)  # spent the 1 included minute and more
     resp = c.post(url)
     assert resp.status_code == 402 and "out of credits" in resp.json()["detail"].lower()
-    assert len(fake.to("/v2/create-web-call")) == 0
+    assert len(fake.to("/v3/create-web-call")) == 0
 
 
 def test_two_simultaneous_test_calls_cannot_spend_the_same_last_minutes(fake, monkeypatch):
@@ -210,7 +210,7 @@ def test_a_lapsed_subscription_cannot_test_and_does_not_get_the_free_call_back(f
     subscribe(org, status="past_due")
     resp = c.post(url)
     assert resp.status_code == 402 and "billing" in resp.json()["detail"].lower()
-    assert _allowances(org) == 0 and len(fake.to("/v2/create-web-call")) == 0
+    assert _allowances(org) == 0 and len(fake.to("/v3/create-web-call")) == 0
 
 
 def test_a_member_of_another_organization_cannot_start_my_test_call(fake):

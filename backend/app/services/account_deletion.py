@@ -98,6 +98,10 @@ def delete_organization(
                     _ignore_missing(agents.delete_agent, agent.retell_agent_id)
                 if agent.retell_llm_id:
                     _ignore_missing(agents.delete_llm, agent.retell_llm_id)
+                if agent.closed_retell_agent_id:
+                    _ignore_missing(agents.delete_agent, agent.closed_retell_agent_id)
+                if agent.closed_retell_llm_id:
+                    _ignore_missing(agents.delete_llm, agent.closed_retell_llm_id)
     except (PaddleAPIError, RetellAPIError, RuntimeError) as e:
         db.rollback()
         logger.error("Account deletion blocked [org=%s]: %s", org_id, e)

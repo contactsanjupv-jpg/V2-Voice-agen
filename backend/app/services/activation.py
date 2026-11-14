@@ -7,11 +7,14 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.locks import LockNotAcquired, redis_lock
+from app.db.models.business import Business
 from app.db.models.telephony import PhoneNumber, PhoneNumberStatus
 from app.db.models.voice_agent import Agent, AgentStatus
 from app.providers.phone.phone_provider import PhoneProvider
 from app.providers.phone.retell_phone_provider import RetellPhoneProvider
+from app.services.inbound_routing import routing_enabled
 
 logger = logging.getLogger("atla.activation")
 
@@ -53,10 +56,23 @@ def activate_receptionist(
                 db.commit()
                 raise ActivationBlocked("We couldn't find this phone number with our provider. Get a new number to go live.")
 
-            if current.inbound_agent_id != agent.retell_agent_id:
-                provider.assign_agent(phone.retell_phone_number_id, agent.retell_agent_id)
+            # After-hours routing: the number's DEFAULT agent is the closed twin (no transfer tool) and the inbound
+            # webhook upgrades a call to the normal agent only when the server confirms the business is open. So if
+            # the webhook is down, slow or wrong, callers still reach the safe agent.
+            business = db.get(Business, agent.business_id)
+            routed = routing_enabled(business)
+            if routed and not agent.closed_retell_agent_id:
+                raise ActivationBlocked("Your after-hours receptionist hasn't been created yet. Save it again, then go live.")
+            target = agent.closed_retell_agent_id if routed else agent.retell_agent_id
+            hook = f"{get_settings().BACKEND_PUBLIC_URL.rstrip('/')}/webhooks/retell/inbound"
+            if routed and current.inbound_webhook_url != hook:
+                provider.set_inbound_webhook(phone.retell_phone_number_id, hook)
+            elif not routed and current.inbound_webhook_url and current.inbound_webhook_url.endswith("/webhooks/retell/inbound"):
+                provider.set_inbound_webhook(phone.retell_phone_number_id, None)  # opted out: stop routing calls
+            if current.inbound_agent_id != target:
+                provider.assign_agent(phone.retell_phone_number_id, target)
                 current = provider.get_number(phone.retell_phone_number_id)
-                if current is None or current.inbound_agent_id != agent.retell_agent_id:
+                if current is None or current.inbound_agent_id != target:
                     raise ActivationUnverified()
 
             phone.agent_id = agent.id
@@ -95,7 +111,14 @@ def verify_receptionist_live(db: Session, org_id: uuid.UUID, agent: Agent, numbe
     except Exception:  # noqa: BLE001 - any provider failure means we cannot confirm
         logger.warning("Live check could not reach provider [agent=%s]", agent.id)
         return "unverified", "We couldn't confirm your receptionist's status with our provider just now. Please refresh in a moment."
-    if current is None or not current.inbound_agent_id or current.inbound_agent_id != agent.retell_agent_id:
+    expected = agent.retell_agent_id
+    if db is not None:
+        business = db.get(Business, agent.business_id)
+        if routing_enabled(business):
+            expected = agent.closed_retell_agent_id  # routed numbers default to the closed twin
+            if not expected:
+                return "not_live", "Your after-hours receptionist hasn't been created yet. Save your receptionist again."
+    if current is None or not current.inbound_agent_id or current.inbound_agent_id != expected:
         return "not_live", "Your phone number is not currently connected to your receptionist. Go live again from the dashboard."
     if agent.synced_version != agent.version:
         return "live", "Your receptionist is answering calls, but your latest changes haven't been applied yet — callers hear the previous version."

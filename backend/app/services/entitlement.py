@@ -29,6 +29,7 @@ from app.db.models.voice_agent import Agent, AgentStatus
 from app.providers.phone.phone_provider import PhoneProvider
 from app.services.billing_state import current_subscription, has_active_subscription
 from app.services.credits import credits_beyond_overage_limit, credits_exhausted_beyond_grace
+from app.services import owner_notifications
 from app.services.phone_provisioning import release_number
 
 logger = logging.getLogger("atla.entitlement")
@@ -71,14 +72,24 @@ def enforce_entitlements(
         if since is None:
             continue
         try:
+            switched_off = False
             for phone in db.query(PhoneNumber).filter(PhoneNumber.organization_id == org_id, PhoneNumber.status == PhoneNumberStatus.active).all():
                 if phone.agent_id is not None:
                     provider.unassign_agent(phone.retell_phone_number_id)
                     phone.agent_id = None
                     db.commit()
                     result["suspended"] += 1
+                    switched_off = True
             for agent in db.query(Agent).filter(Agent.organization_id == org_id, Agent.status == AgentStatus.active).all():
                 agent.status = AgentStatus.paused
+                switched_off = True
+            if switched_off:
+                # Same commit as the pause: the owner is told once per pause, and only when something was really
+                # switched off (a later pass finds nothing live and sends nothing).
+                owner_notifications.enqueue(
+                    db, org_id, owner_notifications.KIND_SERVICE_PAUSED, f"paused:{now.isoformat()}",
+                    {"reason": owner_notifications.pause_reason(db, org_id)},
+                )
             db.commit()
             if now >= since + timedelta(days=settings.NUMBER_RELEASE_DELAY_DAYS):
                 for phone in db.query(PhoneNumber).filter(PhoneNumber.organization_id == org_id, PhoneNumber.status == PhoneNumberStatus.active).all():

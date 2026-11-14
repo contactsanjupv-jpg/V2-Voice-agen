@@ -21,6 +21,7 @@ Also run the worker under a supervisor that restarts it (docker `restart: always
 | `provisioning_stuck` | A number purchase has been in progress over 15 min | Worker reconciles; if persistent, check Retell |
 | `provisioning_blocked_payment` | A paying customer has no number: **Retell account needs a payment method or balance** | Fund Retell; the worker retries within 30 min |
 | `provisioning_failed` | A purchase failed (not payment) | Log line `Number purchase failed ... status=`; see docs/RETELL_VERIFICATION.md |
+| `owner_notifications_undelivered` | Owner emails (new lead, service paused, payment failed, low credits) are unsent after 15 min of retrying, or gave up in the last 7 days | Check `SMTP_*` settings and the worker log for `atla.email`; see `docs/OWNER_NOTIFICATIONS.md` |
 | `refund_stuck` | Refund `requested`/`unconfirmed` over 15 min | Re-submit from the admin refund route; it reconciles with Paddle first |
 | `refund_pending_approval` | Submitted refund waiting 48 h for Paddle approval | Check Paddle dashboard |
 

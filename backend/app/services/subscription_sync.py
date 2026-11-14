@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.billing import Subscription
 from app.db.models.tenancy import Organization
+from app.services import owner_notifications
 from app.services.credits import ensure_plan_grant
 from app.services.plans import UNKNOWN_PLAN, plan_id_from_items
 
@@ -64,6 +65,7 @@ def sync_subscription(db: Session, data: dict, occurred_at: datetime) -> bool:
         .with_for_update()
         .first()
     )
+    previous_status = subscription.status if subscription is not None else None
     if subscription is None:
         org_id = parse_uuid(custom.get("organization_id"))
         if org_id is None or db.get(Organization, org_id) is None:
@@ -110,4 +112,12 @@ def sync_subscription(db: Session, data: dict, occurred_at: datetime) -> bool:
     # applies a snapshot (webhook AND reconciler), idempotent by (subscription, period start).
     db.flush()
     ensure_plan_grant(db, subscription)
+
+    if new_status == "past_due" and previous_status != "past_due":
+        # A payment failed. Queued in the same transaction as the status change, once per transition (a redelivered
+        # webhook or the reconciler sees no transition and queues nothing).
+        owner_notifications.enqueue(
+            db, subscription.organization_id, owner_notifications.KIND_PAYMENT_FAILED,
+            f"{external_id}:{occurred_at.isoformat()}", {"subscription_id": external_id},
+        )
     return True

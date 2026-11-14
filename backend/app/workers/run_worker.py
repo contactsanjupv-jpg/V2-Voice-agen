@@ -8,6 +8,7 @@ One loop, Postgres-backed (no extra infrastructure). Every pass it:
   * settles ambiguous phone-number purchases,
   * enforces entitlements (suspend / release numbers for lapsed subscriptions; pause when out of credits),
   * settles top-up purchases whose Paddle webhook never arrived,
+  * emails owners (new lead, paused service, failed payment, low credits) from the durable outbox,
 Slow jobs (voice-catalog sync, Paddle subscription reconciliation) run in their own threads
 (app/workers/background_jobs.py) so they can never delay those. A watchdog restarts the process if the loop stalls.
 Each job is idempotent, so running two workers is safe (just redundant).
@@ -18,7 +19,7 @@ import time
 from app.db.base import SessionLocal
 from app.providers.phone.retell_phone_provider import RetellPhoneProvider
 from app.services.auto_provisioning import settle_auto_provisioning
-from app.services import monitoring
+from app.services import monitoring, owner_notifications
 from app.services.entitlement import enforce_entitlements
 from app.services.phone_provisioning import reconcile_provisioning
 from app.services.topups import reconcile_topups
@@ -75,6 +76,9 @@ def run_once(phone_provider=None) -> dict:
     except Exception:  # noqa: BLE001
         logger.exception("Worker pass failed")
         failed.append("pass")
+    # Owner emails need only SMTP: they must go out even when Retell is unconfigured or the provider jobs above failed.
+    isolated("credit_alerts", "credit_alerts", lambda: owner_notifications.credit_alert_pass(db) or skipped)
+    isolated("owner_notifications", "owner_notifications", lambda: owner_notifications.send_due_notifications(db))
     try:
         summary["alerts_sent"] = monitoring.sweep(db)
     except Exception:  # noqa: BLE001 - monitoring must never break the worker

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { api, ApiError, StructuredBusinessInfo } from "@/lib/api";
+import { defaultTimezone, detectTimezone, timezoneOptions } from "@/lib/timezones";
 import { WizardActions, ErrorBanner } from "./WizardShell";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -34,6 +35,7 @@ export function StepReview({
   const [industry, setIndustry] = useState(initial.industry || "");
   const [address, setAddress] = useState(initial.address || "");
   const [phone, setPhone] = useState(initial.phone || "");
+  const [timezone, setTimezone] = useState(defaultTimezone(detectTimezone()));
   const [description, setDescription] = useState(initial.description || "");
   const [services, setServices] = useState<string[]>(initial.services || []);
   const [newService, setNewService] = useState("");
@@ -62,6 +64,7 @@ export function StepReview({
         description: description.trim() || null,
         hours: initial.hours,
         phone: phone.trim() || null,
+        timezone: timezone || null,
         services,
         faqs: initial.faqs || [],
         policies: initial.policies || [],
@@ -98,6 +101,13 @@ export function StepReview({
             <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} placeholder="+1…" />
           </Field>
         </div>
+
+        <Field label="Timezone">
+          <select value={timezone} onChange={(e) => setTimezone(e.target.value)} className={inputClass}>
+            <option value="">Select your timezone…</option>
+            {timezoneOptions(timezone, detectTimezone()).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </Field>
 
         <Field label="Address">
           <input value={address} onChange={(e) => setAddress(e.target.value)} className={inputClass} />

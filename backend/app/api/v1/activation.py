@@ -1,19 +1,23 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.deps import current_membership, get_current_user, require_feature, require_role
 from app.auth.rate_limit import RateLimitExceeded, check_rate_limit
 from app.config import get_settings
 from app.services import free_test
+from app.services.hours_schedule import is_enabled
 from app.services.billing_state import ACTIVE_STATUSES, current_subscription
 from app.services.credits import can_cover_paid_test, credit_summary, ensure_current_grant, lock_org_credits
 from app.services.plans import Feature
 from app.db.base import get_db
 from app.db.models.calls import Call, CallDirection
 from app.db.models.billing import FreeTestAllowance
+from app.db.models.business import Business
 from app.db.models.tenancy import OrganizationMember, OrgRole, User
 from app.db.models.voice_agent import Agent, AgentStatus
 from app.providers.call.retell_call_provider import RetellCallProvider
@@ -24,16 +28,30 @@ from app.services.activation import (
     activate_receptionist as activate_service,
 )
 from app.providers.retell_client import RetellAPIError
-from app.schemas.activation import ActivateRequest, ActivateResponse, TestCallResponse
+from app.schemas.activation import ActivateRequest, ActivateResponse, IceServer, TestCallResponse
 
 router = APIRouter(prefix="/api/v1/orgs/{organization_id}", tags=["activation"])
 settings = get_settings()
 logger = logging.getLogger("atla.activation")
 
 
-@router.post("/agents/{agent_id}/test-call", response_model=TestCallResponse)
+def _closed_twin_missing_reason(db: Session, agent: Agent) -> str:
+    """Say WHY there is no after-hours receptionist, so the owner knows what to fix."""
+    business = db.get(Business, agent.business_id)
+    if not settings.AFTER_HOURS_ROUTING_ENABLED:
+        return (
+            "After-hours routing is turned off on this server (AFTER_HOURS_ROUTING_ENABLED is false), so the "
+            "after-hours receptionist can't be created. Turn it on, restart the backend, then save your receptionist."
+        )
+    if business is None or not is_enabled(business.hours_schedule):
+        return "Turn on opening hours in Settings → Business profile and save, then try again."
+    return "Your after-hours receptionist hasn't been created yet. Save your business profile or receptionist to create it."
+
+
+@router.post("/agents/{agent_id}/test-call", response_model=TestCallResponse, response_model_exclude_none=True)
 def start_test_call(
     agent_id: uuid.UUID,
+    variant: Literal["normal", "closed"] = Query(default="normal"),
     membership: OrganizationMember = Depends(current_membership),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -63,14 +81,27 @@ def start_test_call(
             "Your latest changes haven't been applied to your receptionist yet. Save it again, then test.",
         )
 
+    # `variant=closed` tries the after-hours twin (no transfer tool) in the browser. Same admission rules and rate limit.
+    answering_agent_id = agent.retell_agent_id
+    if variant == "closed":
+        if not agent.closed_retell_agent_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, _closed_twin_missing_reason(db, agent))
+        answering_agent_id = agent.closed_retell_agent_id
+
     org_id = membership.organization_id
     allowance = None
     is_free = False
+    # Local sandbox clone only (config.unmetered_test_calls_active re-checks ENV, PADDLE_ENV and the database name).
+    # It skips ONLY the credit check and the exhausted-free-allowance refusal; it never writes credits, subscription
+    # or billing rows. A lapsed plan is still refused. Everything else below (auth, membership, agent, sync, rate
+    # limit, max duration) is unchanged.
+    unmetered = settings.unmetered_test_calls_active
     lock_org_credits(db, org_id)  # held until the commit below
     sub = current_subscription(db, org_id)
     if sub is not None and sub.status in ACTIVE_STATUSES:
-        ensure_current_grant(db, org_id)
-        if not can_cover_paid_test(db, org_id):
+        if not unmetered:
+            ensure_current_grant(db, org_id)
+        if not unmetered and not can_cover_paid_test(db, org_id):
             db.rollback()
             raise HTTPException(
                 status.HTTP_402_PAYMENT_REQUIRED,
@@ -84,14 +115,19 @@ def start_test_call(
         )
     else:
         allowance = free_test.reserve(db, org_id, user.id)
-        if allowance is None:
+        if allowance is None and unmetered:
+            logger.warning("UNMETERED local test call [org=%s]: free allowance used, bypassed", org_id)
+        elif allowance is None:
             db.rollback()
             logger.warning("Free test call refused [org=%s user=%s]: allowance used", org_id, user.id)
             raise HTTPException(
                 status.HTTP_402_PAYMENT_REQUIRED,
                 "You've used your free test call. Choose a plan to test your receptionist again.",
             )
-        is_free = True
+        is_free = allowance is not None
+
+    if unmetered and not is_free:
+        logger.warning("UNMETERED local test call [org=%s agent=%s]: credit check bypassed", org_id, agent.id)
 
     try:
         check_rate_limit(f"test-call:{org_id}", settings.TEST_CALLS_PER_DAY_PER_ORG, 86400)
@@ -105,6 +141,7 @@ def start_test_call(
         agent_id=agent.id,
         direction=CallDirection.test,
         status="registered",
+        admitted_as="dev_test" if unmetered and not is_free else None,
     )
     db.add(placeholder)
     db.commit()  # releases the lock; from here concurrent requests see this call as in flight
@@ -124,8 +161,8 @@ def start_test_call(
     try:
         provider = RetellCallProvider()
         session = provider.create_test_call(
-            agent.retell_agent_id,
-            metadata={"organization_id": str(org_id), "agent_id": str(agent.id), "kind": "free_test" if is_free else "test"},
+            answering_agent_id,
+            metadata={"organization_id": str(org_id), "agent_id": str(agent.id), "kind": "free_test" if is_free else ("dev_test" if unmetered else "test")},
         )
     except RetellAPIError as e:
         # logger.exception records the full traceback INCLUDING the chained original
@@ -156,6 +193,10 @@ def start_test_call(
     return TestCallResponse(
         call_id=session.provider_call_id,
         access_token=session.access_token,
+        transport=session.transport,
+        ice_servers=[IceServer(**s) for s in session.ice_servers],
+        expires_at=session.expires_at,
+        url=session.url,
         max_seconds=settings.TEST_CALL_MAX_SECONDS,
         is_free=is_free,
     )

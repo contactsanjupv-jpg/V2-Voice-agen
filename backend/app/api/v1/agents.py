@@ -22,26 +22,26 @@ from app.schemas.catalog import (
 from app.services.activation import verify_receptionist_live
 from app.services.auto_provisioning import provisioning_state
 from app.services.phone_provisioning import active_number
-from app.services.agent_service import save_agent_settings, sync_agent_to_provider
+from app.services.agent_service import is_fully_synced, save_agent_settings, sync_agent_to_provider, twin_missing
 
 router = APIRouter(prefix="/api/v1/orgs/{organization_id}/agents", tags=["agents"])
 logger = logging.getLogger("atla.agents")
 
 
-def _agent_out(agent: Agent) -> AgentOut:
+def _agent_out(agent: Agent, db: Session) -> AgentOut:
     return AgentOut(
         id=str(agent.id),
         name=agent.name,
         status=agent.status.value,
         retell_agent_id=agent.retell_agent_id,
-        synced=agent.retell_agent_id is not None and agent.synced_version == agent.version,
+        synced=is_fully_synced(db, agent),
     )
 
 
 @router.get("", response_model=list[AgentOut])
 def list_agents(membership: OrganizationMember = Depends(current_membership), db: Session = Depends(get_db)):
     agents = db.query(Agent).filter(Agent.organization_id == membership.organization_id).all()
-    return [_agent_out(a) for a in agents]
+    return [_agent_out(a, db) for a in agents]
 
 
 @router.put("/{business_id}", response_model=AgentOut)
@@ -72,7 +72,7 @@ def upsert_agent(
 
     agent = sync_or_http_error(db, agent, business, voice)
 
-    return _agent_out(agent)
+    return _agent_out(agent, db)
 
 
 def sync_or_http_error(db: Session, agent: Agent, business: Business, voice: Voice) -> Agent:
@@ -138,7 +138,7 @@ def get_agent_config(
         status=agent.status.value,
         version=agent.version,
         synced_version=agent.synced_version,
-        synced=agent.retell_agent_id is not None and agent.synced_version == agent.version,
+        synced=is_fully_synced(db, agent, business),
         supported_tasks=list(SUPPORTED_TASKS),
         personalities=list(PERSONALITIES),
     )
@@ -161,7 +161,7 @@ def get_call_handling(
     else:
         if agent.retell_agent_id is None:
             sync_state = "never_synced"
-        elif agent.synced_version == agent.version:
+        elif agent.synced_version == agent.version and not twin_missing(db, agent, business):
             sync_state = "synced"
         else:
             sync_state = "pending"

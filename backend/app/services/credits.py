@@ -100,6 +100,9 @@ def ensure_plan_grant(db: Session, sub: Subscription, now: datetime | None = Non
     plan = PLANS.get(sub.plan_id)
     if plan is None or plan.included_minutes <= 0:
         return False
+    # Serialise concurrent deliveries / reconciles for this org so "is this period already granted?" and the insert are
+    # one step (re-entrant within a transaction that already holds it). The unique idempotency_key stays the backstop.
+    lock_org_credits(db, sub.organization_id)
     # A duplicate subscription (the customer paid twice) is scheduled to cancel at period end and must not receive its
     # own allowance: only the subscription of record (billing_state.current_subscription: the OLDEST active one, the
     # same rule duplicate_subscriptions uses) is granted minutes. If the record later ends, the remaining active
@@ -109,7 +112,8 @@ def ensure_plan_grant(db: Session, sub: Subscription, now: datetime | None = Non
         logger.warning("Not granting minutes to duplicate subscription %s [org=%s]: %s is the subscription of record",
                        sub.external_subscription_id, sub.organization_id, record.external_subscription_id)
         return False
-    key = _grant_key(sub)
+    period_start = _grant_period_start(db, sub)
+    key = _grant_key(sub, period_start)
     created = _insert_once(
         db,
         CreditLedgerEntry(
@@ -117,7 +121,7 @@ def ensure_plan_grant(db: Session, sub: Subscription, now: datetime | None = Non
             kind="plan_grant",
             bucket=INCLUDED,
             seconds=plan.included_minutes * 60,
-            period_start=sub.current_period_start,
+            period_start=period_start,
             period_end=sub.current_period_end,
             reference=sub.external_subscription_id,
             idempotency_key=key,
@@ -132,7 +136,7 @@ def ensure_plan_grant(db: Session, sub: Subscription, now: datetime | None = Non
     missing = period_grant_deficit_seconds(db, sub, now)
     topped_up = False
     if missing > 0:
-        target = _period_granted_seconds(db, sub) + missing
+        target = _period_granted_seconds(db, sub) + missing  # same canonical period as above
         topped_up = _insert_once(
             db,
             CreditLedgerEntry(
@@ -140,7 +144,7 @@ def ensure_plan_grant(db: Session, sub: Subscription, now: datetime | None = Non
                 kind="plan_grant",
                 bucket=INCLUDED,
                 seconds=missing,
-                period_start=sub.current_period_start,
+                period_start=period_start,
                 period_end=sub.current_period_end,
                 reference=sub.external_subscription_id,
                 idempotency_key=f"{key}:topup-to:{target}",  # same target => same key: a replay or a race inserts nothing
@@ -152,13 +156,42 @@ def ensure_plan_grant(db: Session, sub: Subscription, now: datetime | None = Non
     return created or topped_up
 
 
-def _grant_key(sub: Subscription) -> str:
-    start = sub.current_period_start
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=timezone.utc)
-    else:
-        start = start.astimezone(timezone.utc)
-    return f"grant:{sub.external_subscription_id or sub.id}:{start.isoformat()}"
+# Billing periods are monthly, so two snapshots of the SAME period never start a day apart, while a renewal starts ~30 days
+# later. Any snapshot whose period start is within this tolerance of an already-granted period is that same period.
+SAME_PERIOD_TOLERANCE = timedelta(days=1)
+
+
+def _utc(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _grant_period_start(db: Session, sub: Subscription) -> datetime:
+    """
+    The identity of the billing period being granted: the period start the subscription's FIRST grant for this period was
+    recorded with. A later snapshot of the same period (another event id, a reconcile, a replay) can carry a start that
+    differs by a second or so; keying on its exact timestamp would grant the period again. A renewal starts about a month
+    later, finds no earlier grant within the tolerance, and so is its own period and is granted normally.
+    """
+    start = _utc(sub.current_period_start)
+    if not sub.external_subscription_id:
+        return start
+    earlier = (
+        db.query(CreditLedgerEntry.period_start)
+        .filter(
+            CreditLedgerEntry.organization_id == sub.organization_id,
+            CreditLedgerEntry.kind == "plan_grant",
+            CreditLedgerEntry.reference == sub.external_subscription_id,
+            CreditLedgerEntry.period_start >= start - SAME_PERIOD_TOLERANCE,
+            CreditLedgerEntry.period_start <= start + SAME_PERIOD_TOLERANCE,
+        )
+        .order_by(CreditLedgerEntry.period_start)
+        .first()
+    )
+    return _utc(earlier[0]) if earlier is not None else start
+
+
+def _grant_key(sub: Subscription, period_start: datetime) -> str:
+    return f"grant:{sub.external_subscription_id or sub.id}:{_utc(period_start).isoformat()}"
 
 def _period_granted_seconds(db: Session, sub: Subscription) -> int:
     """Included seconds already granted for this billing period."""
@@ -167,7 +200,7 @@ def _period_granted_seconds(db: Session, sub: Subscription) -> int:
         .filter(
             CreditLedgerEntry.organization_id == sub.organization_id,
             CreditLedgerEntry.kind == "plan_grant",
-            CreditLedgerEntry.period_start == sub.current_period_start,
+            CreditLedgerEntry.period_start == _grant_period_start(db, sub),
         )
         .scalar()
     )

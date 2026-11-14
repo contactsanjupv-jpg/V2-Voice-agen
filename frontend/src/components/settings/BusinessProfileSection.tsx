@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, BusinessProfile, describeError } from "@/lib/api";
+import { timezoneOptions } from "@/lib/timezones";
+import { HoursScheduleEditor } from "./HoursScheduleEditor";
+import { serverRoutingNotice } from "@/lib/hoursSchedule";
 import {
   buildProfileUpdate, classifySaveError, draftFromProfile, reconcileProfileSave, removeItem, SAVED, validateProfile,
   type AgentSyncStatus, type ProfileDraft, type SaveOutcome,
@@ -90,7 +93,21 @@ export function BusinessProfileSection({
             <Field label="Website"><input className={INPUT} value={draft.website_url} placeholder="https://" inputMode="url" onChange={(e) => set("website_url", e.target.value)} /></Field>
             <Field label="Address"><input className={INPUT} value={draft.address} maxLength={512} onChange={(e) => set("address", e.target.value)} /></Field>
           </div>
+          <Field label="Timezone">
+            <select className={INPUT} value={draft.timezone} onChange={(e) => set("timezone", e.target.value)}>
+              <option value="">Select your timezone…</option>
+              {timezoneOptions(draft.timezone).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-[var(--color-muted)]">Your receptionist and your emails use this clock. Set it to where the business is, not where you are.</p>
+          </Field>
           <Field label="Description"><textarea className={INPUT} rows={3} value={draft.description} maxLength={4000} onChange={(e) => set("description", e.target.value)} /></Field>
+        </Group>
+
+        <Group title="After-hours handling" hint="Optional. Off = your receptionist behaves exactly as it does today.">
+          <HoursScheduleEditor value={draft.schedule} onChange={(schedule) => set("schedule", schedule)} />
+          {serverRoutingNotice(draft.schedule, profile.after_hours_routing_available) && (
+            <p role="status" className="text-[13px] text-[#7a2416]">{serverRoutingNotice(draft.schedule, profile.after_hours_routing_available)}</p>
+          )}
         </Group>
 
         <Group title="Hours, services &amp; policies" hint="Groups can be collapsed; nothing is removed unless you press Remove.">

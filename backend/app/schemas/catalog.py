@@ -61,6 +61,9 @@ class PurchaseNumberRequest(BaseModel):
             raise PydanticCustomError("area_code", str(e)) from e
 
 
+from app.services.disclosure import GREETING_REJECTED, deceptive_greeting_claim  # noqa: E402
+
+
 class AgentConfigRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     greeting: str | None = Field(default=None, max_length=500)
@@ -71,6 +74,13 @@ class AgentConfigRequest(BaseModel):
     transfer_number: str | None = None
     business_hours: dict | None = None  # reserved; not customer-configurable yet
     after_hours_behavior: str | None = None  # reserved; not customer-configurable yet
+
+    @field_validator("greeting")
+    @classmethod
+    def _greeting_is_honest(cls, v: str | None) -> str | None:
+        if deceptive_greeting_claim(v):
+            raise PydanticCustomError("greeting", GREETING_REJECTED)
+        return v
 
     @field_validator("language")
     @classmethod

@@ -66,7 +66,8 @@ class UsageLedgerEntry(Base, UUIDPKMixin, TimestampMixin):
     )
     retell_call_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     # "production" (always chargeable) | "test" (a test call made while subscribed: chargeable) |
-    # "free_test" (the one promised free call: NOT charged to the customer, cost still recorded)
+    # "free_test" (the one promised free call: NOT charged to the customer, cost still recorded) |
+    # "dev_test" (local sandbox clone only, ALLOW_UNMETERED_LOCAL_TEST_CALLS: not charged, cost still recorded)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     billable_seconds: Mapped[int] = mapped_column(Integer, nullable=False)  # duration rounded to the nearest second

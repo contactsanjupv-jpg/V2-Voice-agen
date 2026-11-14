@@ -39,6 +39,8 @@ ALLOWED_NON_ORG_ROUTES = {
     ("POST", "/api/v1/admin/refunds"),  # platform-admin only (require_platform_admin)
     ("GET", "/health"), ("GET", "/health/ready"), ("GET", "/health/alerts"),  # health; /alerts needs a bearer token
     ("POST", "/webhooks/paddle"), ("POST", "/webhooks/retell"),  # signature-verified provider webhooks
+    ("POST", "/webhooks/retell/inbound"),  # signature-verified; reads only the called number, returns an agent id
+    ("POST", "/api/v1/dev/simulate-inbound"),  # signed-in user AND local sandbox only (404 elsewhere); same read-only policy
 }
 
 

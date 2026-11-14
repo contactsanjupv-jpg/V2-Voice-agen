@@ -143,6 +143,8 @@ def approve_business(
     business.description = payload.description
     business.hours = payload.hours
     business.phone = payload.phone
+    if payload.timezone is not None:  # omitted/blank never wipes a timezone the owner already set
+        business.timezone = payload.timezone
     business.status = BusinessStatus.reviewed
     business.approved_at = datetime.now(timezone.utc)
 
@@ -191,7 +193,7 @@ def approve_business(
 # Settings-page profile editing (knowledge-preserving)
 # ---------------------------------------------------------------------------
 
-_PROFILE_FIELDS = ("name", "industry", "phone", "address", "website_url", "description", "hours")
+_PROFILE_FIELDS = ("name", "industry", "phone", "address", "website_url", "description", "hours", "timezone", "hours_schedule")
 
 
 def _parse_faq(item: KnowledgeItem) -> tuple[str, str]:
@@ -229,6 +231,9 @@ def _profile_out(db: Session, business: Business) -> BusinessProfileOut:
         website_url=business.website_url,
         description=business.description,
         hours=business.hours,
+        timezone=business.timezone,
+        hours_schedule=business.hours_schedule,
+        after_hours_routing_available=bool(get_settings().AFTER_HOURS_ROUTING_ENABLED),
         status=business.status.value,
         services=services,
         faqs=faqs,
@@ -270,6 +275,8 @@ def update_business_profile(
     receptionist is re-synced so callers hear the edit (502/409 = saved but not applied).
     """
     from app.api.v1.agents import sync_or_http_error  # local: agents imports nothing from here
+    from app.services.agent_service import twin_missing
+    from app.services.inbound_routing import routing_enabled
 
     business = _tenant_business(db, membership, business_id)
 
@@ -325,18 +332,22 @@ def update_business_profile(
         db.delete(existing[kid])
         changed = True
 
+    # The receptionist is re-synced when this save changed what it says, OR when after-hours routing is on and its
+    # closed twin was never created (e.g. the schedule was saved while the flag was off, or a Retell call failed
+    # part-way). Without the second case an identical re-save would be a no-op and the twin would never appear.
     agent = None
-    if changed:
+    if changed or routing_enabled(business):
         agent = (
             db.query(Agent)
             .filter(Agent.business_id == business.id, Agent.organization_id == membership.organization_id)
             .first()
         )
-        if agent is not None:
+        if agent is not None and changed:
             agent.version += 1  # the prompt is built from this data: provider copy is now stale
+    twin_needed = agent is not None and twin_missing(db, agent, business)
     db.commit()
 
-    if agent is not None and agent.retell_agent_id is not None and agent.voice is not None:
+    if agent is not None and agent.retell_agent_id is not None and agent.voice is not None and (changed or twin_needed):
         sync_or_http_error(db, agent, business, agent.voice)
 
     db.refresh(business)
