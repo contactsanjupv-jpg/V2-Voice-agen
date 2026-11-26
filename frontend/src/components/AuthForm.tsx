@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { Loader2 } from "lucide-react";
+import { GoogleButton } from "@/components/GoogleButton";
 
 type Mode = "signup" | "login";
 
@@ -20,7 +21,7 @@ function validatePassword(password: string): string | null {
   return null;
 }
 
-export function AuthForm() {
+export function AuthForm({ googleError = null }: { googleError?: string | null }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signup");
   const [email, setEmail] = useState("");
@@ -28,6 +29,7 @@ export function AuthForm() {
   const [orgName, setOrgName] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [googleNotice, setGoogleNotice] = useState<string | null>(googleError);
   const [submitting, setSubmitting] = useState(false);
 
   function validate(): boolean {
@@ -44,6 +46,7 @@ export function AuthForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
+    setGoogleNotice(null);
     if (!validate()) return;
 
     setSubmitting(true);
@@ -87,6 +90,7 @@ export function AuthForm() {
               setMode(m);
               setFieldErrors({});
               setFormError(null);
+              setGoogleNotice(null);
             }}
             className={`flex-1 rounded-full py-2 text-[14px] font-medium transition-colors ${
               mode === m ? "bg-[var(--color-ink)] text-[var(--color-paper)]" : "text-[var(--color-ink-soft)]"
@@ -96,6 +100,13 @@ export function AuthForm() {
           </button>
         ))}
       </div>
+
+      {googleNotice && (
+        <div role="alert" className="mb-4 rounded-lg bg-[var(--color-ring-soft)] px-3.5 py-2.5 text-[13.5px] text-[#7a2416]">
+          {googleNotice}
+        </div>
+      )}
+      <GoogleButton />
 
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {mode === "signup" && (

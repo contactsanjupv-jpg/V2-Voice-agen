@@ -28,7 +28,7 @@ export function describeSubscription(sub: SubscriptionOut | null, cancelPending 
       label: "Ending",
       tone: "warn",
       headline: `Your plan ends on ${cancelOn}`,
-      detail: "Your receptionist keeps answering calls until then. You won't be charged again.",
+      detail: "Your receptionist keeps answering calls until then you won't be charged again",
     };
   }
   if (sub.entitled && (cancelPending || sub.cancel_requested_at) && !cancelOn) {

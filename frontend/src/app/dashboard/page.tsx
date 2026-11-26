@@ -12,6 +12,7 @@ import { StatusCards } from "@/components/dashboard/StatusCards";
 import { AttentionList } from "@/components/dashboard/AttentionList";
 import { MetricCards } from "@/components/dashboard/MetricCards";
 import { RangeTabs } from "@/components/dashboard/RangeTabs";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import { RecentCalls, WaitingLeads } from "@/components/dashboard/ActivityLists";
 import { UsageChart } from "@/components/credits/UsageChart";
 import { CreditsPanel } from "@/components/credits/CreditsPanel";
@@ -54,7 +55,10 @@ export default function DashboardOverview() {
           <h1 className="font-[family-name:var(--font-display)] text-[24px] font-bold tracking-tight">Overview</h1>
           <p className="mt-1 truncate text-[14.5px] text-[var(--color-ink-soft)]">{org?.name}</p>
         </div>
-        <RangeTabs value={range} onChange={setRange} />
+        <div className="flex items-center gap-3">
+          <RangeTabs value={range} onChange={setRange} />
+          <NotificationBell key={orgId} orgId={orgId} />
+        </div>
       </div>
 
       <div className="mt-6 space-y-3">

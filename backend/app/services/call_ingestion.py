@@ -31,7 +31,7 @@ from app.db.models.crm import Lead
 from app.db.models.platform import WebhookEvent
 from app.db.models.telephony import PhoneNumber, PhoneNumberStatus
 from app.db.models.voice_agent import Agent
-from app.services import free_test, owner_notifications
+from app.services import free_test, notifications, owner_notifications
 from app.services.hours_schedule import received_after_hours
 from app.services.billing_state import ACTIVE_STATUSES, current_subscription
 
@@ -84,11 +84,69 @@ def ingest_event(db: Session, event: WebhookEvent) -> None:
     _apply_call_fields(call, event_type, pcall)
     db.flush()
     if event_type in ("call_ended", "call_analyzed"):
+        _notify_call_outcome(db, call)
         _upsert_transcript(db, call, pcall)
         _upsert_usage(db, call, pcall)
     if event_type == "call_analyzed":
         _upsert_lead(db, call, pcall)
     db.flush()
+
+
+# Retell's documented DisconnectionReason values (https://docs.retellai.com/reliability/debug-call-disconnect and the call object's
+# schema), each classified once for an INBOUND customer call. A "missed call" is one the receptionist did not serve because of a
+# capacity, billing or platform failure. A test pins every documented value to exactly one of these sets.
+#
+# NOT missed, the call went as it should (or the caller chose how it ended):
+#   user_hangup, agent_hangup, user_requested_dnc, user_requested_callback, voicemail_reached, ivr_reached, inactivity,
+#   max_duration_reached, call_take_over (a human took over), manual_stopped.
+# NOT missed, legs of an agentic warm transfer (the transfer agent's own call, not the customer's inbound call):
+#   transfer_bridged, transfer_cancelled.
+# NOT missed, documented by Retell for OUTBOUND dialing only (an Atla receptionist answers inbound calls and dials nobody):
+#   dial_busy, dial_failed, dial_no_answer, invalid_destination, user_declined, marked_as_spam, network_blocked,
+#   telephony_provider_permission_denied (SIP-trunk authentication), telephony_provider_unavailable, sip_routing_error.
+#   If outbound calling ever ships, these must be revisited.
+# NOT missed, web calls only (an Atla inbound phone call never has them): error_user_not_joined.
+# call_transfer is its own notification (call_transferred).
+NOT_MISSED_REASONS = frozenset({
+    "user_hangup", "agent_hangup", "user_requested_dnc", "user_requested_callback", "voicemail_reached", "ivr_reached",
+    "inactivity", "max_duration_reached", "call_take_over", "manual_stopped", "transfer_bridged", "transfer_cancelled",
+    "dial_busy", "dial_failed", "dial_no_answer", "invalid_destination", "user_declined", "marked_as_spam", "network_blocked",
+    "telephony_provider_permission_denied", "telephony_provider_unavailable", "sip_routing_error", "error_user_not_joined",
+    "call_transfer",
+})
+
+# Missed: the caller reached us and the receptionist did not (or could not) serve them.
+#   concurrency_limit_reached / no_concurrency_fallback: no capacity slot (the latter was rerouted to a fallback number)
+#   no_valid_payment / credit_exhausted / budget_reached: the provider account stopped taking calls
+#   scam_detected: the agent was blocked by the provider's abuse flag
+#   error_*: the provider failed mid-call (LLM link, audio, speech recognition, platform); registered_call_timeout: the registered
+#   call expired before it was connected.
+MISSED_REASONS = frozenset({
+    "concurrency_limit_reached", "no_concurrency_fallback", "no_valid_payment", "credit_exhausted", "budget_reached",
+    "scam_detected", "error_llm_websocket_open", "error_llm_websocket_lost_connection", "error_llm_websocket_runtime",
+    "error_llm_websocket_corrupt_payload", "error_no_audio_received", "error_asr", "error_retell", "error_unknown",
+    "registered_call_timeout",
+})
+
+
+def _is_missed(reason: str | None) -> bool:
+    if not reason or reason in NOT_MISSED_REASONS:
+        return False
+    # A value Retell adds later: its own naming convention marks provider failures with "error_"; anything else is not assumed missed.
+    return reason in MISSED_REASONS or reason.startswith("error_")
+
+
+def _notify_call_outcome(db: Session, call: Call) -> None:
+    """In-app, same transaction, once per call (the key is the call): a customer's inbound call that failed to connect, or was
+    handed to the owner's team. Test calls (the owner's own browser test, a prospect's free test) are not customer activity.
+    Only the reason CLASS and the last four digits of the caller's number reach the message, never provider text."""
+    if call.direction != CallDirection.inbound or call.organization_id is None:
+        return
+    payload = {"caller_last4": (call.caller_number or "")[-4:]}
+    if _is_missed(call.disconnect_reason):
+        notifications.create(db, call.organization_id, "missed_call", f"call:{call.id}:missed", payload)
+    elif call.disconnect_reason == "call_transfer":
+        notifications.create(db, call.organization_id, "call_transferred", f"call:{call.id}:transferred", payload)
 
 
 # ---------- resolution ----------

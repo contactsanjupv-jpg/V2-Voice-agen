@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.db.models.billing import CreditLedgerEntry, TopupPurchase
 from app.providers.billing.paddle_billing_provider import PaddleBillingProvider
+from app.services import notifications
 from app.services.credits import add_ledger_entry, lock_org_credits
 
 logger = logging.getLogger("atla.topups")
@@ -152,6 +153,8 @@ def _grant(db: Session, row: TopupPurchase, txn_id: str) -> bool:
     row.status = "completed"
     row.completed_at = row.completed_at or datetime.now(timezone.utc)
     row.provider_transaction_id = row.provider_transaction_id or txn_id
+    if granted:  # in-app only, same transaction, once per transaction (the ledger key's twin)
+        notifications.create(db, row.organization_id, "topup_credited", f"topup:{txn_id}", {"minutes": row.credit_seconds // 60})
     return granted
 
 
@@ -232,6 +235,7 @@ def apply_adjustment(db: Session, adj: dict) -> bool:
             return False
         row.refunded_minor = new_refunded
         if delta > 0:
+            notifications.create(db, row.organization_id, "refund_applied", f"refund:{adj_id}", {"minutes": delta // 60})
             row.clawed_back_seconds += delta
             row.status = "refunded" if row.refunded_minor >= row.amount_minor else "partially_refunded"
         return delta > 0
@@ -243,6 +247,7 @@ def apply_adjustment(db: Session, adj: dict) -> bool:
             idempotency_key=f"chargeback:{adj_id}", reference=adj_id, note="Chargeback",
         )
         if applied:
+            notifications.create(db, row.organization_id, "chargeback_applied", f"chargeback:{adj_id}", {"minutes": remaining // 60})
             row.clawed_back_seconds += remaining
             row.status = "chargeback"
         return bool(applied)

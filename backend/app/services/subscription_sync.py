@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.billing import Subscription
 from app.db.models.tenancy import Organization
-from app.services import owner_notifications
+from app.services import notifications, owner_notifications
 from app.services.credits import ensure_plan_grant
 from app.services.plans import UNKNOWN_PLAN, plan_id_from_items
 
@@ -50,6 +50,39 @@ def resolve_plan_id(data: dict, existing: str | None) -> str:
     return custom.get("plan_id") or existing or UNKNOWN_PLAN
 
 
+def notify_plan_minutes(db: Session, sub: Subscription) -> None:
+    """In-app: the plan's minutes were added for this billing period. One per subscription and period (the key is the period end's
+    date, which every snapshot of the same period shares), so a replayed webhook or the reconciler adds nothing more."""
+    if sub.current_period_end is None:
+        return
+    notifications.create(
+        db, sub.organization_id, "plan_minutes_added",
+        f"grant:{sub.external_subscription_id}:{sub.current_period_end.date().isoformat()}", {"plan_id": sub.plan_id},
+    )
+
+
+def _notify_changes(db, sub, external_id, occurred_at, previous_status, previous_plan, previous_cancel_at) -> None:
+    """In-app notifications for billing changes, created in the same transaction as the change and only on a TRANSITION, so a
+    redelivered webhook, the reconciler or an out-of-order snapshot (all of which see no transition) notify nobody. Never email."""
+    org = sub.organization_id
+    live = ("active", "trialing")
+    if previous_status is None:
+        if sub.status in live:
+            notifications.create(db, org, "subscription_started", f"{external_id}:started", {"plan_id": sub.plan_id})
+        return
+    if previous_plan != sub.plan_id and UNKNOWN_PLAN not in (previous_plan, sub.plan_id):
+        notifications.create(
+            db, org, "plan_changed", f"{external_id}:plan:{previous_plan}>{sub.plan_id}:{occurred_at.isoformat()}",
+            {"plan_id": sub.plan_id, "previous_plan_id": previous_plan},
+        )
+    if previous_status == "past_due" and sub.status in live:
+        notifications.create(db, org, "payment_recovered", f"{external_id}:recovered:{occurred_at.isoformat()}", {})
+    if previous_cancel_at is None and sub.cancel_effective_at is not None and sub.status != "canceled":
+        notifications.create(db, org, "cancellation_scheduled", f"{external_id}:cancel:{sub.cancel_effective_at.isoformat()}", {})
+    if sub.status == "canceled" and previous_status != "canceled":
+        notifications.create(db, org, "subscription_canceled", f"{external_id}:canceled", {})
+
+
 def sync_subscription(db: Session, data: dict, occurred_at: datetime) -> bool:
     """Returns True if the snapshot was applied, False if ignored."""
     external_id = data.get("id")
@@ -66,6 +99,8 @@ def sync_subscription(db: Session, data: dict, occurred_at: datetime) -> bool:
         .first()
     )
     previous_status = subscription.status if subscription is not None else None
+    previous_plan = subscription.plan_id if subscription is not None else None
+    previous_cancel_at = subscription.cancel_effective_at if subscription is not None else None
     if subscription is None:
         org_id = parse_uuid(custom.get("organization_id"))
         if org_id is None or db.get(Organization, org_id) is None:
@@ -111,7 +146,7 @@ def sync_subscription(db: Session, data: dict, occurred_at: datetime) -> bool:
     # Monthly included credits: one grant per billing period, created here for every path that
     # applies a snapshot (webhook AND reconciler), idempotent by (subscription, period start).
     db.flush()
-    ensure_plan_grant(db, subscription)
+    granted = ensure_plan_grant(db, subscription)
 
     if new_status == "past_due" and previous_status != "past_due":
         # A payment failed. Queued in the same transaction as the status change, once per transition (a redelivered
@@ -120,4 +155,7 @@ def sync_subscription(db: Session, data: dict, occurred_at: datetime) -> bool:
             db, subscription.organization_id, owner_notifications.KIND_PAYMENT_FAILED,
             f"{external_id}:{occurred_at.isoformat()}", {"subscription_id": external_id},
         )
+    _notify_changes(db, subscription, external_id, occurred_at, previous_status, previous_plan, previous_cancel_at)
+    if granted:  # after the status message, so the feed reads in the order things happened
+        notify_plan_minutes(db, subscription)
     return True

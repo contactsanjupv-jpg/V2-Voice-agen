@@ -111,7 +111,7 @@ export function attentionItems(input: {
   }
 
   if (agent && sub?.entitled && !phone) {
-    items.push({ id: "phone", tone: "warn", title: "No business number connected", detail: "Your receptionist has no number to answer yet.", cta: { label: "Set up your number", href: "/dashboard/go-live" } });
+    items.push({ id: "phone", tone: "warn", title: "No business number connected", detail: "Your receptionist has no number to answer yet", cta: { label: "Set up your number", href: "/dashboard/go-live" } });
   }
 
   return items.sort((a, b) => ORDER[a.tone] - ORDER[b.tone]);

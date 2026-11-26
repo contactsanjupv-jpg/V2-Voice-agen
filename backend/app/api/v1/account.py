@@ -2,7 +2,7 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
@@ -44,13 +44,29 @@ class DeleteAccount(BaseModel):
     password: str = Field(max_length=128)
 
 
+NO_PASSWORD_MESSAGE = (
+    "Your account signs in with Google and has no password yet. Use 'Forgot your password?' on the login page "
+    "to set one first."
+)
+
+
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _deliver(to: str, subject: str, body: str) -> None:
+    """Runs after the response is sent. A failed send is logged by send_email (no body, masked address) and must
+    never change what the caller saw: the endpoint answers identically for every address."""
+    if not send_email(to, subject, body):
+        logger.error("Account email '%s' was not delivered", subject)
+
+
 @router.post("/auth/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
-def request_password_reset(payload: ResetRequest, request: Request, db: Session = Depends(get_db)):
-    """Always 204 — never reveals whether the address has an account."""
+def request_password_reset(
+    payload: ResetRequest, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)
+):
+    """Always 204 — never reveals whether the address has an account. The email is sent AFTER the response, so
+    neither the status nor the response time depends on whether the address exists or the mail server is slow."""
     email = payload.email.lower()
     try:
         check_rate_limit(f"pwreset-ip:{_client_ip(request)}", 10, 3600)
@@ -61,7 +77,8 @@ def request_password_reset(payload: ResetRequest, request: Request, db: Session 
     if user is not None:
         token = create_reset_token(str(user.id))
         link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
-        send_email(
+        background.add_task(
+            _deliver,
             user.email,
             "Reset your Atla password",
             f"Use this link to choose a new password (valid for {settings.PASSWORD_RESET_TTL_SECONDS // 60} minutes):\n\n{link}\n\n"
@@ -71,7 +88,9 @@ def request_password_reset(payload: ResetRequest, request: Request, db: Session 
 
 
 @router.post("/auth/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
-def confirm_password_reset(payload: ResetConfirm, request: Request, db: Session = Depends(get_db)):
+def confirm_password_reset(
+    payload: ResetConfirm, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)
+):
     try:
         check_rate_limit(f"pwreset-confirm:{_client_ip(request)}", 20, 3600)
     except RateLimitExceeded as e:
@@ -83,6 +102,13 @@ def confirm_password_reset(payload: ResetConfirm, request: Request, db: Session 
     user.password_hash = hash_password(payload.new_password)
     db.commit()
     destroy_all_sessions_for_user(str(user.id))  # anyone holding an old session is signed out
+    background.add_task(
+        _deliver,
+        user.email,
+        "Your Atla password was changed",
+        "The password for your Atla account was just changed using a reset link, and every device was signed out.\n\n"
+        f"If this was you, there's nothing to do. If it wasn't, reset your password right away: {settings.FRONTEND_URL}/forgot-password",
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -94,6 +120,8 @@ def change_password(
         check_rate_limit(f"pwchange:{user.id}", 10, 900)
     except RateLimitExceeded as e:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Please try again later.") from e
+    if user.password_hash is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, NO_PASSWORD_MESSAGE)
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Your current password is incorrect.")
     if payload.new_password == payload.current_password:
@@ -120,6 +148,8 @@ def delete_account(
     except RateLimitExceeded as e:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts. Please try again later.") from e
     org = db.get(Organization, membership.organization_id)
+    if user.password_hash is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, NO_PASSWORD_MESSAGE)
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Your password is incorrect.")
     if org is None or payload.confirm_name.strip() != org.name:

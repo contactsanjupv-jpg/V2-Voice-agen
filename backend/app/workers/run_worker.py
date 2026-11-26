@@ -19,7 +19,7 @@ import time
 from app.db.base import SessionLocal
 from app.providers.phone.retell_phone_provider import RetellPhoneProvider
 from app.services.auto_provisioning import settle_auto_provisioning
-from app.services import monitoring, owner_notifications
+from app.services import daily_analytics, monitoring, notifications, owner_notifications
 from app.services.entitlement import enforce_entitlements
 from app.services.phone_provisioning import reconcile_provisioning
 from app.services.topups import reconcile_topups
@@ -79,6 +79,8 @@ def run_once(phone_provider=None) -> dict:
     # Owner emails need only SMTP: they must go out even when Retell is unconfigured or the provider jobs above failed.
     isolated("credit_alerts", "credit_alerts", lambda: owner_notifications.credit_alert_pass(db) or skipped)
     isolated("owner_notifications", "owner_notifications", lambda: owner_notifications.send_due_notifications(db))
+    isolated("daily_analytics", "daily_reports", lambda: daily_analytics.report_pass(db) or skipped)
+    isolated("notification_prune", "notifications_pruned", lambda: (notifications.prune_pass(db) or skipped))
     try:
         summary["alerts_sent"] = monitoring.sweep(db)
     except Exception:  # noqa: BLE001 - monitoring must never break the worker

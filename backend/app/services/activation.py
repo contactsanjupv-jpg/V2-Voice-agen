@@ -4,6 +4,7 @@ Activation = make the receptionist answer the org's number, and only report
 """
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.db.models.telephony import PhoneNumber, PhoneNumberStatus
 from app.db.models.voice_agent import Agent, AgentStatus
 from app.providers.phone.phone_provider import PhoneProvider
 from app.providers.phone.retell_phone_provider import RetellPhoneProvider
+from app.services import notifications
 from app.services.inbound_routing import routing_enabled
 
 logger = logging.getLogger("atla.activation")
@@ -75,8 +77,11 @@ def activate_receptionist(
                 if current is None or current.inbound_agent_id != target:
                     raise ActivationUnverified()
 
+            previous_status = agent.status
             phone.agent_id = agent.id
             agent.status = AgentStatus.active
+            if previous_status != AgentStatus.active:  # a transition (first go-live, or back from paused), not a repeat call
+                notifications.create(db, org_id, "receptionist_live", f"live:{agent.id}:{datetime.now(timezone.utc).isoformat()}", {})
             db.commit()
             db.refresh(agent)
             return agent

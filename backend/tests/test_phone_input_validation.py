@@ -20,6 +20,7 @@ from app.services import auto_provisioning
 from app.services.phone_provisioning import InvalidProvisioningRequest, provision_number
 from tests.fakes import FakePhone
 from tests.test_phone_lifecycle import _activate, _clone, _live_setup, _org
+from tests.phone_ids import unique_number
 
 
 @pytest.fixture
@@ -118,7 +119,7 @@ def test_real_provider_never_sees_a_bad_area_code_and_leaves_no_stuck_row(monkey
 
         def request(self, method, path, json=None, params=None):
             seen.append(json)
-            return {"phone_number": f"+1555{uuid.uuid4().int % 10_000_000:07d}"}
+            return {"phone_number": unique_number()}
 
     for target in ("app.services.phone_provisioning.RetellPhoneProvider", "app.api.v1.phone_numbers.RetellPhoneProvider"):
         monkeypatch.setattr(target, lambda: RetellPhoneProvider(Wire()))

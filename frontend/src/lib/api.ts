@@ -1,12 +1,14 @@
 import type { HoursSchedule } from "./hoursSchedule";
 import type { TestVariant } from "./testVariant";
+import type { NotificationPreference } from "./notificationPreferences";
+import type { NotificationCategory, NotificationPage, NotificationStateOut } from "./notifications";
 /**
  * Thin fetch wrapper for the Atla backend. Credentials are always included
  * so the session cookie round-trips — the backend is what enforces auth,
  * this file just makes sure the browser sends what it has.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 export class ApiError extends Error {
   status: number;
@@ -471,6 +473,36 @@ export interface AgentConfigUpdate {
 }
 
 export const api = {
+  authProviders: () => request<{ google: boolean }>("/api/v1/auth/providers"),
+
+  googlePending: () => request<{ email: string; name: string; kind: "new" | "link_password" | "link_email" | "blocked" }>("/api/v1/auth/google/pending"),
+
+  googleLinkConfirm: (password: string) =>
+    request<{ id: string; email: string }>("/api/v1/auth/google/link/confirm", { method: "POST", body: JSON.stringify({ password }) }),
+
+  googleLinkEmail: () => request<void>("/api/v1/auth/google/link/email", { method: "POST" }),
+
+  googleLinkVerify: (token: string) =>
+    request<{ id: string; email: string }>("/api/v1/auth/google/link/verify", { method: "POST", body: JSON.stringify({ token }) }),
+
+  googleStatus: () => request<{ configured: boolean; linked: boolean; has_password: boolean }>("/api/v1/auth/google/status"),
+
+  // Password accounts get a Google URL back; passwordless accounts get {verification: "email_sent"} (a link is emailed instead).
+  googleLinkStart: (password: string | null) =>
+    request<{ url?: string; verification?: "email_sent" }>("/api/v1/auth/google/link/start", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  googleLinkVerifyStart: (token: string) =>
+    request<{ url: string }>("/api/v1/auth/google/link/verify-start", { method: "POST", body: JSON.stringify({ token }) }),
+
+  googleComplete: (organization_name: string) =>
+    request<{ id: string; email: string }>("/api/v1/auth/google/complete", {
+      method: "POST",
+      body: JSON.stringify({ organization_name }),
+    }),
+
   signup: (
     data: {
       email: string;
@@ -675,6 +707,18 @@ export const api = {
   getCheckoutState: (orgId: string) => request<CheckoutState>(`/api/v1/orgs/${orgId}/billing/checkout`),
   getDashboardSummary: (orgId: string, range: "today" | "7d" | "30d", tz: string) =>
   request<DashboardSummary>(`/api/v1/orgs/${orgId}/dashboard/summary?${new URLSearchParams({ range, tz })}`),
+  listNotifications: (orgId: string, p: { limit?: number; before?: number | null; unreadOnly?: boolean } = {}) => {
+    const q = new URLSearchParams({ limit: String(p.limit ?? 20) });
+    if (p.before) q.set("before", String(p.before));
+    if (p.unreadOnly) q.set("unread_only", "true");
+    return request<NotificationPage>(`/api/v1/orgs/${orgId}/notifications?${q}`);
+  },
+  getNotificationState: (orgId: string) => request<NotificationStateOut>(`/api/v1/orgs/${orgId}/notifications/state`),
+  markNotificationRead: (orgId: string, id: string) => request<NotificationStateOut>(`/api/v1/orgs/${orgId}/notifications/${encodeURIComponent(id)}/read`, { method: "POST" }),
+  getNotificationPreferences: (orgId: string) => request<NotificationPreference[]>(`/api/v1/orgs/${orgId}/notifications/preferences`),
+  setNotificationPreference: (orgId: string, category: NotificationCategory, enabled: boolean) =>
+    request<NotificationPreference>(`/api/v1/orgs/${orgId}/notifications/preferences/${encodeURIComponent(category)}`, { method: "PUT", body: JSON.stringify({ enabled }) }),
+  markAllNotificationsRead: (orgId: string) => request<{ marked: number; unread_count: number }>(`/api/v1/orgs/${orgId}/notifications/read-all`, { method: "POST" }),
   getSubscription: (orgId: string) =>
     request<SubscriptionOut | null>(
       `/api/v1/orgs/${orgId}/billing/subscription`,

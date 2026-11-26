@@ -1,8 +1,10 @@
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { AuthForm } from "@/components/AuthForm";
+import { googleErrorMessage } from "@/lib/googleAuth";
 
-export default function GetStarted() {
+export default async function GetStarted({ searchParams }: { searchParams: Promise<{ google_error?: string | string[] }> }) {
+  const googleError = googleErrorMessage((await searchParams).google_error);
   return (
     <div className="flex min-h-screen flex-col">
       <Nav />
@@ -14,7 +16,7 @@ export default function GetStarted() {
           <p className="mb-8 text-[14.5px] text-[var(--color-ink-soft)]">
             Takes about ten minutes, starting with your website.
           </p>
-          <AuthForm />
+          <AuthForm googleError={googleError} />
         </div>
       </main>
       <Footer />

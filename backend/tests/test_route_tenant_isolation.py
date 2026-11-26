@@ -24,6 +24,7 @@ from app.main import app
 from app.config import get_settings
 from tests.billing_helpers import subscribe
 from tests.test_tenant_isolation import _signup
+from tests.phone_ids import unique_number
 
 ORG_PREFIX = "/api/v1/orgs/{organization_id}"
 SECRET = "SECRET-TENANT-A-0451"
@@ -33,6 +34,13 @@ ALLOWED_NON_ORG_ROUTES = {
     ("POST", "/api/v1/auth/login"), ("POST", "/api/v1/auth/logout"), ("POST", "/api/v1/auth/signup"),
     ("POST", "/api/v1/auth/password-reset/request"), ("POST", "/api/v1/auth/password-reset/confirm"),
     ("GET", "/api/v1/auth/me"), ("POST", "/api/v1/auth/password/change"),  # the caller's own user
+    ("GET", "/api/v1/auth/providers"),  # which sign-in methods are configured; public, no data
+    ("GET", "/api/v1/auth/google/start"), ("GET", "/api/v1/auth/google/callback"),  # OAuth redirects: state cookie + PKCE
+    ("GET", "/api/v1/auth/google/pending"), ("POST", "/api/v1/auth/google/complete"),  # act only on the caller's own pending sign-up cookie
+    ("POST", "/api/v1/auth/google/link/confirm"), ("POST", "/api/v1/auth/google/link/email"),  # act only on the caller's own pending
+    ("POST", "/api/v1/auth/google/link/verify"),  # sign-in cookie, and need proof (password / emailed token) for the account
+    ("GET", "/api/v1/auth/google/status"), ("POST", "/api/v1/auth/google/link/start"),  # the signed-in caller's own user only
+    ("POST", "/api/v1/auth/google/link/verify-start"),  # the signed-in caller's own user, session and browser, with a one-time emailed token
     ("GET", "/api/v1/orgs/me"),  # lists only the caller's own memberships
     ("GET", "/api/v1/plans"), ("GET", "/api/v1/public-config"),  # public catalog
     ("GET", "/api/v1/voices"),  # shared voice catalog, not tenant data
@@ -96,7 +104,7 @@ def tenants():
         )
         db.add(agent)
         db.flush()
-        number = f"+1555{uuid.uuid4().int % 10_000_000:07d}"
+        number = unique_number()
         phone = PhoneNumber(organization_id=uuid.UUID(org_a), agent_id=agent.id, retell_phone_number_id=number, number=number)
         call = Call(organization_id=uuid.UUID(org_a), retell_call_id=f"call_{uuid.uuid4().hex[:12]}", direction=CallDirection.inbound,
                     status="ended", caller_number="+15550001111", summary=f"{SECRET} summary")

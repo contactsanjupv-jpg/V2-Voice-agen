@@ -9,6 +9,8 @@ import hmac
 import json
 import time
 import uuid
+
+from tests.phone_ids import unique_number
 from datetime import timedelta
 
 import pytest
@@ -44,7 +46,7 @@ def _post(payload: dict, signed: bool = True):
 
 
 def _number() -> str:
-    return "+1555" + str(uuid.uuid4().int % 10_000_000).zfill(7)
+    return unique_number()
 
 
 def _org(label: str) -> dict:

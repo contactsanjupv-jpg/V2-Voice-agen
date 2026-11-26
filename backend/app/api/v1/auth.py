@@ -77,9 +77,10 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     # user (against a fixed dummy hash) so response timing doesn't reveal
     # whether the email exists.
     dummy_hash = "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$c29tZWhhc2g"
-    password_ok = verify_password(payload.password, user.password_hash if user else dummy_hash)
+    # A Google-only account has no password: it verifies against the dummy hash too, so it fails the same way.
+    password_ok = verify_password(payload.password, (user.password_hash if user else None) or dummy_hash)
 
-    if user is None or not password_ok:
+    if user is None or user.password_hash is None or not password_ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
 
     user.last_login_at = datetime.now(timezone.utc)

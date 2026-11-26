@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.calls import router as calls_router
 from app.api.v1.leads import router as leads_router
+from app.api.v1.notifications import router as notifications_router
 from app.api.v1.activation import router as activation_router
 from app.api.v1.agents import router as agents_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.google_auth import router as google_auth_router
 from app.api.v1.businesses import router as businesses_router
 from app.api.v1.organizations import router as organizations_router
 from app.api.v1.phone_numbers import router as phone_numbers_router
@@ -51,6 +53,7 @@ app.add_middleware(
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(auth_router)
+app.include_router(google_auth_router)
 app.include_router(organizations_router)
 app.include_router(businesses_router)
 app.include_router(voices_router)
@@ -59,6 +62,7 @@ app.include_router(agents_router)
 app.include_router(activation_router)
 app.include_router(calls_router)
 app.include_router(leads_router)
+app.include_router(notifications_router)
 app.include_router(retell_webhook_router)
 app.include_router(retell_inbound_router)
 app.include_router(billing_router)

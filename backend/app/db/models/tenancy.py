@@ -27,12 +27,31 @@ class User(Base, UUIDPKMixin, TimestampMixin):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # NULL for people who only ever signed in with Google. They can set one with "Forgot your password?".
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     email_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     memberships: Mapped[list["OrganizationMember"]] = relationship(back_populates="user")
+
+
+class OAuthIdentity(Base, UUIDPKMixin, TimestampMixin):
+    """A third-party login (Google) bound to a user. Matched by the provider's stable `sub`, never by email, so a
+    changed Google address can't hand the account to someone else."""
+
+    __tablename__ = "oauth_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "subject", name="uq_oauth_provider_subject"),  # one Atla user per Google account
+        UniqueConstraint("user_id", "provider", name="uq_oauth_user_provider"),  # one Google account per Atla user
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)  # as Google reported it at link time
 
 
 class Organization(Base, UUIDPKMixin, TimestampMixin):

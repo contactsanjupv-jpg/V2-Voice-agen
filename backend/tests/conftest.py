@@ -2,8 +2,79 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core import email as email_mod
 from app.db.base import Base, SessionLocal, engine
+from tests import email_safety
 from tests.db_safety import UnsafeTestDatabase, check_test_database
+
+# ---- EMAIL SAFETY (see tests/email_safety.py, docs/EMAIL_SAFETY.md). Runs at import, before any test, fixture or app code can
+# send anything, and does not depend on ENV, on SMTP_HOST="" being exported, or on anyone remembering either. ----
+email_mod.force_test_mode()  # send_email opens no SMTP connection in this process, whatever the settings say
+_EMAIL_FIELDS_SCRUBBED = [f for f in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD") if getattr(get_settings(), f, "")]
+for _field in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD"):
+    setattr(get_settings(), _field, "")  # the real credentials from .env are not even readable by a test
+
+
+def pytest_report_header(config):
+    note = f"{len(_EMAIL_FIELDS_SCRUBBED)} SMTP setting(s) from the environment were scrubbed" if _EMAIL_FIELDS_SCRUBBED else "no SMTP settings were present"
+    return f"email safety: real SMTP delivery is disabled for this run ({note})"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_real_smtp_connections():
+    uninstall = email_safety.install()
+    yield
+    uninstall()
+
+
+def _reset_quota_breaker():
+    try:
+        email_mod.clear_quota_pause()
+    except (email_mod.BreakerStoreError, email_mod.StalePauseError):  # a test made the shared state unreadable, or raced a pause; it restores it itself
+        email_mod._replace_local(None)
+
+
+@pytest.fixture(autouse=True)
+def _email_guard_per_test():
+    """Fails any test whose code tried to reach a real mail server, even if the code swallowed the exception; clears the
+    quota breaker and the record of refused sends so tests cannot affect each other."""
+    email_safety.violations.clear()
+    email_mod.blocked_in_test_mode.clear()
+    _reset_quota_breaker()
+    yield
+    _reset_quota_breaker()
+    attempted = list(email_safety.violations)
+    email_safety.violations.clear()
+    assert not attempted, f"a test tried to reach a real mail server: {attempted}"
+
+
+class Outbox:
+    """A local email catcher: what the app would have sent, with no network. `refuse` makes it pretend the server said no."""
+
+    def __init__(self):
+        self.sent: list[tuple[str, str, str]] = []
+        self.refuse: bool | set[str] = False
+
+    def __call__(self, to, subject, body) -> bool:
+        if self.refuse is True or (isinstance(self.refuse, set) and to in self.refuse):
+            return False
+        self.sent.append((to, subject, body))
+        return True
+
+    def to(self, address: str) -> list[tuple[str, str, str]]:
+        return [m for m in self.sent if m[0] == address]
+
+    def subjects(self) -> list[str]:
+        return [m[1] for m in self.sent]
+
+
+@pytest.fixture
+def outbox():
+    box = Outbox()
+    previous = email_mod.install_test_transport(box)
+    yield box
+    email_mod.install_test_transport(previous)
+
 
 
 @pytest.fixture(scope="session", autouse=True)

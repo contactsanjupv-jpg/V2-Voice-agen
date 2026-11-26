@@ -1,6 +1,7 @@
 """An in-memory stand-in for Retell's phone-number API that can misbehave on demand."""
 import threading
-import uuid
+
+from tests.phone_ids import unique_number
 
 from app.providers.phone.phone_provider import PhoneProvider, ProvisionedNumber
 from app.providers.retell_client import RetellAPIError
@@ -35,7 +36,7 @@ class FakePhone(PhoneProvider):
             if self.timeout_without_purchase > 0:
                 self.timeout_without_purchase -= 1
                 raise RetellAPIError(0, "No response from Retell", ambiguous=True)
-            pid = f"+1555{uuid.uuid4().int % 10_000_000:07d}"
+            pid = unique_number()
             self.numbers[pid] = {"nickname": nickname, "agent": None}
             if self.timeout_after_success > 0:
                 self.timeout_after_success -= 1

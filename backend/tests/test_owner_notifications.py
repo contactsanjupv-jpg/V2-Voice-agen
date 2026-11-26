@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.config import get_settings
+from app.core.email import EmailOutcome, EmailResult
 from app.db.base import SessionLocal
 from app.db.models.billing import Subscription
 from app.db.models.calls import Call
@@ -55,9 +56,12 @@ class Mailbox:
 def mailbox(monkeypatch):
     box = Mailbox()
     MAILBOX_REF[0] = box
-    monkeypatch.setattr(on, "send_email", box)
+    monkeypatch.setattr(on, "send_email_result", lambda to, subject, body: EmailResult(EmailOutcome.SENT if box(to, subject, body) else EmailOutcome.TRANSIENT))
     monkeypatch.setattr(get_settings(), "FRONTEND_URL", FRONTEND)
     monkeypatch.setattr(get_settings(), "OWNER_NOTIFICATIONS_ENABLED", True)
+    # These tests exercise the email OUTBOX MACHINERY (claims, ledger, quota, retries) as if the kinds were email-eligible. By policy
+    # none is (EMAIL_KINDS is empty: operational alerts are in-app only); that is asserted in tests/test_notification_policy.py.
+    monkeypatch.setattr(on, "EMAIL_KINDS", frozenset({on.KIND_LEAD, on.KIND_SERVICE_PAUSED, on.KIND_LOW_CREDITS, on.KIND_CREDITS_EMPTY, on.KIND_PAYMENT_FAILED}))
     _wipe()
     yield box
     _wipe()
@@ -389,16 +393,18 @@ def test_alert_for_notifications_stuck_pending_and_none_when_healthy(mailbox):
         db.close()
 
 
-def test_one_working_recipient_is_enough_and_is_not_emailed_twice_on_retry(mailbox):
+def test_a_recipient_that_fails_is_retried_alone_and_the_one_that_worked_is_not_emailed_twice(mailbox):
+    """Email-safety revision: one recipient's success no longer marks the notification done for everybody."""
     org, agent, number = _live_org()
     admin = _add_member(org, OrgRole.admin)
     _analyzed(org, agent, number, LEAD)
     mailbox.refuse = {admin}
 
-    assert _send()["sent"] == 1
+    assert _send()["retry"] == 1  # not "sent": the admin has not received it
     assert [to for to, _s, _b in _mail_for(org)] == [_owner_email(org)]
-    _send()
-    assert len(_mail_for(org)) == 1
+    mailbox.refuse = False
+    assert _send(now=datetime.now(timezone.utc) + timedelta(hours=2))["sent"] == 1
+    assert sorted(to for to, _s, _b in _mail_for(org)) == sorted([_owner_email(org), admin])  # each exactly once
 
 
 def test_an_error_while_building_the_message_is_recorded_and_retried(mailbox, monkeypatch):

@@ -7,6 +7,9 @@ from typing import ClassVar, Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -15,6 +18,7 @@ class Settings(BaseSettings):
     # every production safeguard keys off ENV == "production", so a silent fallback would disable them all.
     ENV: Literal["development", "test", "production"] = "development"
     APP_SECRET_KEY: str  # used for session signing — required, no default
+    APP_SECRET_KEY_PREVIOUS: str = ""  # optional, comma-separated: earlier APP_SECRET_KEY values still honoured when matching recorded notification recipients after a rotation
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Database
@@ -47,15 +51,21 @@ class Settings(BaseSettings):
     AUTO_PROVISION_COUNTRY: str = "US"
     AUTO_PROVISION_RETRY_MINUTES: int = 30
     AUTO_PROVISION_MAX_ATTEMPTS: int = 10
-    # Outgoing email (password reset). Any SMTP provider works. Without SMTP_HOST,
-    # development logs the message instead; production logs an error (no email is sent).
+    # Outgoing email (password reset). Any SMTP provider works. Without SMTP_HOST NO email is sent
+    # (a warning, or an error in production, is logged; the message body is never logged).
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = "Atla <no-reply@localhost>"
     SMTP_STARTTLS: bool = True
+    SMTP_USE_SSL: bool = False  # implicit TLS; also used automatically when SMTP_PORT is 465
     PASSWORD_RESET_TTL_SECONDS: int = 3600
+    # "Continue with Google" (OpenID Connect authorization-code flow + PKCE). All three or none. GOOGLE_REDIRECT_URI is
+    # the BACKEND callback, e.g. https://api.example.com/api/v1/auth/google/callback (see docs/GOOGLE_SIGN_IN.md).
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
     # Hard ceiling on any single call (Retell allows 60s–7200s).
     AGENT_MAX_CALL_SECONDS: int = 900
     # Cap on business-knowledge text placed in the agent prompt (cost + latency).
@@ -106,6 +116,11 @@ class Settings(BaseSettings):
     # ---- Owner notifications (see services/owner_notifications.py): email to the business owner for a new lead,
     # a paused receptionist, low/empty credits and a failed payment. Sent by the worker, retried with backoff. ----
     OWNER_NOTIFICATIONS_ENABLED: bool = True
+    # ---- In-app notification stream (Server-Sent Events). The server checks for changes this often and closes each stream after the
+    # max age so the browser reconnects (re-checking the session and membership); a user may hold a few streams (tabs) at once.
+    NOTIFICATION_STREAM_INTERVAL_SECONDS: float = 3.0
+    NOTIFICATION_STREAM_MAX_SECONDS: int = 300
+    NOTIFICATION_STREAM_MAX_PER_USER: int = 5
     OWNER_NOTIFICATION_MAX_ATTEMPTS: int = 8
     # How often the worker looks at every live organization's credit level (the check reads the whole ledger).
     CREDIT_ALERT_INTERVAL_SECONDS: int = 300
@@ -169,6 +184,10 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENV == "production"
 
+    @property
+    def google_configured(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET and self.GOOGLE_REDIRECT_URI)
+
     UNMETERED_TEST_CALL_DATABASE: ClassVar[str] = "atla_paddle_sandbox_clone"
     UNMETERED_TEST_CALL_HOSTS: ClassVar[frozenset[str]] = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -211,6 +230,13 @@ class Settings(BaseSettings):
                 raise RuntimeError(
                     f"ALLOW_UNMETERED_LOCAL_TEST_CALLS is refused ({process}): " + "; ".join(blockers)
                 )
+        if self.ENV == "test" and self.SMTP_HOST and self.SMTP_HOST.strip().lower() not in LOOPBACK_HOSTS:
+            # ENV=test and a real mail server are contradictory. send_email refuses to send in test mode anyway (so this process
+            # could not mail anyone), but a configuration that says both is a mistake worth stopping, not hiding.
+            raise RuntimeError(
+                f"ENV=test is refused ({process}): SMTP_HOST points at a real mail server. Test mode never sends email; "
+                "leave SMTP_HOST empty (or localhost) for ENV=test."
+            )
         if self.is_production:
             problems = self.production_config_problems()
             if problems:
@@ -253,6 +279,11 @@ class Settings(BaseSettings):
             bad.append("PADDLE_ENV (must be set explicitly to 'live' or 'sandbox'; the default is not accepted in production)")
         elif self.PADDLE_ENV == "sandbox" and not self.ALLOW_SANDBOX_BILLING_IN_PRODUCTION:
             bad.append("PADDLE_ENV (is 'sandbox' in production; set ALLOW_SANDBOX_BILLING_IN_PRODUCTION=true only for a deliberate sandbox pilot)")
+        google = [self.GOOGLE_CLIENT_ID, self.GOOGLE_CLIENT_SECRET, self.GOOGLE_REDIRECT_URI]
+        if any(google) and not all(google):
+            bad.append("GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REDIRECT_URI (set all three or none)")
+        elif all(google) and not self.GOOGLE_REDIRECT_URI.startswith("https://"):
+            bad.append("GOOGLE_REDIRECT_URI (must be an https:// URL)")
         key = self.PADDLE_API_KEY
         if self.PADDLE_ENV == "live" and "_sdbx_" in key:
             bad.append("PADDLE_API_KEY (looks like a SANDBOX key but PADDLE_ENV is 'live')")

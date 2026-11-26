@@ -24,6 +24,7 @@ from app.db.models.voice_agent import Agent, AgentStatus
 from app.providers.phone.phone_provider import PhoneProvider, ProvisionedNumber
 from app.providers.phone.retell_phone_provider import RetellPhoneProvider
 from app.providers.retell_client import RetellAPIError
+from app.services import notifications
 
 logger = logging.getLogger("atla.provisioning")
 
@@ -83,6 +84,7 @@ def _adopt(db: Session, prov: PhoneProvisioning, pn: ProvisionedNumber) -> Phone
         )
         db.add(row)
         db.flush()
+        notifications.create(db, prov.organization_id, "phone_number_ready", f"ready:{row.id}", {})  # once, when the number first exists
     prov.phone_number_id = row.id
     prov.status, prov.last_error = "purchased", None
     db.commit()
@@ -145,6 +147,10 @@ def provision_number(
                     raise ProvisioningPending() from e
                 blocked = e.status_code == PAYMENT_REQUIRED
                 prov.status = "blocked_payment" if blocked else "failed"
+                notifications.create(
+                    db, org_id, "phone_provisioning_failed", f"prov-failed:{prov.id}:{prov.generation}:{prov.attempts}",
+                    {"reason": prov.status},
+                )
                 db.commit()
                 logger.error("Number purchase failed [org=%s]: status=%s body=%s error=%s", org_id, e.status_code, e.body, e)
                 raise (ProvisioningPaymentRequired() if blocked else ProvisioningFailed()) from e
@@ -193,6 +199,7 @@ def release_number(db: Session, phone: PhoneNumber, provider: PhoneProvider, rea
     re-provisioned automatically when the subscription becomes active again. A release the customer asked for, or one
     made when the account was deleted, never buys a replacement by itself."""
     provider.release_number(phone.retell_phone_number_id)
+    already_released = phone.status == PhoneNumberStatus.released
     agent_id = phone.agent_id
     phone.status, phone.agent_id = PhoneNumberStatus.released, None
     prov = db.query(PhoneProvisioning).filter(PhoneProvisioning.organization_id == phone.organization_id).first()
@@ -202,4 +209,6 @@ def release_number(db: Session, phone: PhoneNumber, provider: PhoneProvider, rea
         agent = db.get(Agent, agent_id)
         if agent is not None and agent.status == AgentStatus.active:
             agent.status = AgentStatus.paused
+    if not already_released and reason != "account_deleted":  # a retry or an account being deleted tells nobody anything
+        notifications.create(db, phone.organization_id, "phone_number_released", f"released:{phone.id}", {"reason": reason})
     db.commit()

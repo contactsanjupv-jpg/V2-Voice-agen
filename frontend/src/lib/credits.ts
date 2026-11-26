@@ -43,7 +43,7 @@ export function creditBanner(c: CreditsOut): { tone: "low" | "empty"; title: str
     return {
       tone: "empty",
       title: "You're out of credits",
-      body: "Your receptionist keeps answering for a short grace period, then pauses until you add credits.",
+      body: "Your receptionist keeps answering for a short grace period then pauses until you add credits",
     };
   }
   if (c.status === "low") {

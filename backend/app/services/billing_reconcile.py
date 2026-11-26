@@ -28,7 +28,7 @@ from app.services.billing_state import ACTIVE_STATUSES
 from app.services.credits import ensure_plan_grant, period_grant_deficit_seconds
 from app.services.duplicate_subscriptions import schedule_duplicate_cancellations
 from app.services.plans import plan_id_from_items
-from app.services.subscription_sync import parse_dt, sync_subscription
+from app.services.subscription_sync import notify_plan_minutes, parse_dt, sync_subscription
 
 logger = logging.getLogger("atla.billing_reconcile")
 
@@ -97,6 +97,7 @@ def _ensure_grants(db: Session, report: ReconcileReport, apply: bool, organizati
             report.missing_grants.append(label)
         elif ensure_plan_grant(db, sub, now):
             report.grants_created.append(label)
+            notify_plan_minutes(db, sub)
     if apply:
         db.commit()
 

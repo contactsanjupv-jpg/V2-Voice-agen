@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { api, describeError } from "@/lib/api";
 import { BTN, INPUT, SettingsSection } from "../ui";
+import { GoogleConnect } from "./GoogleConnect";
 
 export function SecurityView() {
   const [pwCurrent, setPwCurrent] = useState("");
@@ -23,6 +24,7 @@ export function SecurityView() {
   }
 
   return (
+    <>
     <SettingsSection id="security" title="Change password" description="Other devices are signed out when you change it.">
       <form onSubmit={changePassword} className="max-w-md space-y-3">
         <input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} autoComplete="current-password" placeholder="Current password" aria-label="Current password" className={INPUT} />
@@ -33,5 +35,7 @@ export function SecurityView() {
         {pwMsg && <p className="text-[13.5px] text-[var(--color-ink-soft)]">{pwMsg}</p>}
       </form>
     </SettingsSection>
+    <GoogleConnect />
+    </>
   );
 }

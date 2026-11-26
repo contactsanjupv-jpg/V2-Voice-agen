@@ -120,7 +120,7 @@ export function receptionistStatus(input: {
   return {
     state: "ready",
     label: "Ready to go live",
-    detail: "Not answering real calls yet.",
+    detail: "Not answering real calls yet",
     tone: "neutral",
     action: { label: "Go live", href: "/dashboard/go-live" },
   };

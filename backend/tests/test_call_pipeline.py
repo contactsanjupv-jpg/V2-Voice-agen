@@ -27,6 +27,7 @@ from app.db.models.voice_agent import Agent, AgentStatus, Voice
 from app.main import app
 from app.workers import retell_events as worker
 from tests.test_tenant_isolation import _signup
+from tests.phone_ids import unique_number
 
 settings = get_settings()
 KEY = "test-retell-key"
@@ -59,7 +60,7 @@ def _seed(org_id: str, with_phone: bool = True):
         )
         db.add(agent)
         db.flush()
-        number = f"+1555{uuid.uuid4().int % 10_000_000:07d}"
+        number = unique_number()
         if with_phone:
             db.add(PhoneNumber(organization_id=uuid.UUID(org_id), agent_id=agent.id, retell_phone_number_id=number, number=number))
         db.commit()
