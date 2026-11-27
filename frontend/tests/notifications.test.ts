@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   backoffMs, badgeText, emptyMessage, initialStateFor, mergePage, parseStateEvent, reducer, safeInternalLink, timeLabel,
   type Action, type NotificationItem, type NotificationsState,
@@ -209,7 +210,7 @@ test("times read naturally", () => {
 });
 
 // ---- placement and responsiveness (source checks: there is no DOM in this suite)
-const SRC = new URL("../src", import.meta.url).pathname;
+const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src");  // a real filesystem path (no %20 for spaces)
 const files = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : [join(dir, f)]));
 
 test("the bell is mounted by the Dashboard Overview and nowhere else", () => {

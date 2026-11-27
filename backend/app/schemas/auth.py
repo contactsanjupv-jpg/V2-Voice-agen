@@ -9,7 +9,7 @@ class SignupRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=128)  # same ceiling as signup: no real password is longer, and Argon2 must not see megabytes
 
 
 class UserOut(BaseModel):
