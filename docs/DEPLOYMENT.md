@@ -61,3 +61,16 @@ the same head revision on the restored copy. Do the same drill against your real
 
 Paddle sandbox run (`docs/PADDLE_SANDBOX_TEST.md`), Retell sandbox run (`docs/RETELL_VERIFICATION.md`), SMTP delivery, error tracking,
 a real alert channel, supervisor restart behavior, and a real backup restore. See `docs/LAUNCH_CHECKLIST.md`.
+
+
+## 7. Request-body limits, trusted proxy and production fail-closed checks (Task 12)
+
+* The application refuses bodies over `MAX_REQUEST_BODY_BYTES` (default 1 MiB) with 413, and over `MAX_WEBHOOK_BODY_BYTES` (default 10 MiB) on `/webhooks/*`
+  (Retell sends whole transcripts). It checks the declared length and counts streamed bytes. Also set a limit at the proxy (e.g. nginx `client_max_body_size 10m`).
+* Production now **refuses to start** if `FORWARDED_ALLOW_IPS` is `*`, `MONITORING_TOKEN` is under 32 characters, `ALERT_WEBHOOK_URL` or `SENTRY_DSN` is not https
+  (in addition to the earlier checks: secret length, https URLs, explicit `PADDLE_ENV`, provider keys). Messages name settings, never values.
+* HSTS (2 years, includeSubDomains, preload) and `Secure` session cookies are on whenever `ENV=production`. Verify on the real host with `curl -sI https://…/health`.
+* **Still yours to verify on the real host:** TLS certificate and redirect from http, that `FORWARDED_ALLOW_IPS` is your proxy's real address, that two networks are limited independently,
+  database TLS (`sslmode=require` if the database is not on a private network) and Redis authentication/private networking. `docker-compose.yml` is for development only.
+* Backup/restore: `backend/scripts/backup_restore_drill.sh` automates the drill (dump, restore into a scratch database, compare every table's row count and the Alembic revision, report timings).
+  Run it against a copy of your real database. It was exercised here on a freshly migrated, essentially empty schema, not on production-sized data.

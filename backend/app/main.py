@@ -25,6 +25,8 @@ from app.api.v1.billing import router as billing_router
 from app.api.v1.admin_refunds import router as admin_refunds_router
 from app.api.health import router as health_router
 from app.api.v1.onboarding import router as onboarding_router
+from app.core.body_limit import BodyLimitMiddleware
+from app.core.error_tracking import init_error_tracking
 from app.api.v1.plans import router as plans_router
 from app.api.v1.usage import router as usage_router
 from app.webhooks.paddle import router as paddle_webhook_router
@@ -32,7 +34,8 @@ from app.webhooks.paddle import router as paddle_webhook_router
 
 settings = get_settings()
 
-settings.assert_startup_safe("api")  # fail at start-up, not on the first customer request (the worker runs the same check)
+settings.assert_startup_safe("api")
+init_error_tracking("api")  # fail at start-up, not on the first customer request (the worker runs the same check)
 monitoring.publish_config_fingerprint("api")  # best effort: lets monitoring notice an API/worker configuration mismatch
 
 def docs_urls(is_production: bool) -> dict:
@@ -50,6 +53,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
+app.add_middleware(BodyLimitMiddleware, default_limit=settings.MAX_REQUEST_BODY_BYTES, webhook_limit=settings.MAX_WEBHOOK_BODY_BYTES)  # outermost: refuse before anything reads the body
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.include_router(auth_router)

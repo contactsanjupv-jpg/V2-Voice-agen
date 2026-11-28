@@ -69,3 +69,20 @@ def test_paddle_not_configured_is_not_a_failure_and_skips_only_topups(ran, monke
     assert ran == ["events", "provisioning", "entitlements", "auto"]
     assert summary["failed_jobs"] == []
     assert "topups" not in summary
+
+
+def test_a_failing_retention_pass_is_reported_and_never_blocks_billing_enforcement(ran, monkeypatch):
+    """Task 12: pruning is housekeeping. If it breaks, entitlement enforcement and provisioning must still run, and monitoring must hear of it."""
+    monkeypatch.setattr(run_worker.retention, "prune_pass", _boom)
+    summary = run_worker.run_once(phone_provider=FakePhone())
+    assert ran == ["events", "provisioning", "entitlements", "auto", "topups"]
+    assert "data_retention" in summary["failed_jobs"]
+
+
+def test_the_retention_pass_runs_when_the_others_fail(ran, monkeypatch):
+    called = []
+    monkeypatch.setattr(run_worker.retention, "prune_pass", lambda db: called.append(1) or None)
+    monkeypatch.setattr(run_worker, "reconcile_provisioning", _boom)
+    monkeypatch.setattr(run_worker, "enforce_entitlements", _boom)
+    run_worker.run_once(phone_provider=FakePhone())
+    assert called == [1]

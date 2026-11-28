@@ -193,7 +193,8 @@ def test_login_rejects_oversized_passwords_before_any_hashing():
     for n in (129, 100_000, 2_000_000):
         t = time.monotonic()
         r = c.post("/api/v1/auth/login", json={"email": "someone@example.com", "password": "a" * n})
-        assert r.status_code == 422, (n, r.status_code)
+        # 129 and 100k characters fail validation (422); 2M characters are now refused earlier still by the body limit (413). Neither reaches Argon2.
+        assert r.status_code == (413 if n >= 1_048_576 else 422), (n, r.status_code)
         assert time.monotonic() - t < 2.0
     # a normal wrong password is still an ordinary 401
     assert c.post("/api/v1/auth/login", json={"email": "someone@example.com", "password": "a" * 128}).status_code == 401

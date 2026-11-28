@@ -4,6 +4,7 @@ nothing here is ever safe to hardcode or ship to the frontend.
 """
 from functools import lru_cache
 from typing import ClassVar, Literal
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +52,20 @@ class Settings(BaseSettings):
     AUTO_PROVISION_COUNTRY: str = "US"
     AUTO_PROVISION_RETRY_MINUTES: int = 30
     AUTO_PROVISION_MAX_ATTEMPTS: int = 10
+    # Data retention. 0 = keep (the pre-existing behaviour); otherwise the number of days after a call ended. These are
+    # product/legal decisions the owner must make: nothing is pruned until they are set. See docs/DATA_RETENTION.md.
+    TRANSCRIPT_RETENTION_DAYS: int = 0  # deletes the stored transcript, clears the summary and any recording storage key
+    CALLER_DATA_RETENTION_DAYS: int = 0  # clears the caller's phone number on the call record (the record itself is kept for billing/usage)
+    RETENTION_BATCH_SIZE: int = 500
+    # Retell's OWN retention for what it stores per agent (recordings, transcripts, logs). Unset = leave Retell's setting alone
+    # (Retell's default is to keep forever). Sent as `data_storage_retention_days` when the agent is created or updated.
+    RETELL_DATA_RETENTION_DAYS: int | None = None
+    # Request-body ceilings (bytes). Webhooks get more room: Retell sends whole transcripts. The proxy should enforce its own limit too.
+    MAX_REQUEST_BODY_BYTES: int = 1_048_576
+    MAX_WEBHOOK_BODY_BYTES: int = 10_485_760
+    # Error tracking (optional). Unset = off. See docs/MONITORING.md and app/core/error_tracking.py for what is and is not sent.
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = ""
     # Outgoing email (password reset). Any SMTP provider works. Without SMTP_HOST NO email is sent
     # (a warning, or an error in production, is logged; the message body is never logged).
     SMTP_HOST: str = ""
@@ -221,6 +236,37 @@ class Settings(BaseSettings):
         """True only when the flag is on AND every safety condition holds. Re-checked at the point of use."""
         return bool(self.ALLOW_UNMETERED_LOCAL_TEST_CALLS) and not self.unmetered_test_call_problems()
 
+    @field_validator("TRANSCRIPT_RETENTION_DAYS", "CALLER_DATA_RETENTION_DAYS")
+    @classmethod
+    def _retention_days(cls, v: int) -> int:
+        if v != 0 and not 1 <= v <= 3650:
+            raise ValueError("retention days must be 0 (keep) or between 1 and 3650")
+        return v
+
+    @field_validator("MAX_REQUEST_BODY_BYTES", "MAX_WEBHOOK_BODY_BYTES")
+    @classmethod
+    def _body_limits(cls, v: int) -> int:
+        if not 1024 <= v <= 104_857_600:
+            raise ValueError("body limits must be between 1 KiB and 100 MiB")
+        return v
+
+    @field_validator("RETENTION_BATCH_SIZE")
+    @classmethod
+    def _batch(cls, v: int) -> int:
+        if not 1 <= v <= 5000:
+            raise ValueError("RETENTION_BATCH_SIZE must be between 1 and 5000")
+        return v
+
+    @field_validator("RETELL_DATA_RETENTION_DAYS", mode="before")
+    @classmethod
+    def _retell_days(cls, v):
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        n = int(v)
+        if not 1 <= n <= 730:  # Retell accepts 1..730 or null (docs.retellai.com/accounts/data-retention)
+            raise ValueError("RETELL_DATA_RETENTION_DAYS must be between 1 and 730, or unset")
+        return n
+
     def assert_startup_safe(self, process: str) -> None:
         """Called by EVERY process (API and worker) before it does anything. Production refuses to start with an
         unsafe configuration; the message lists setting names only, never values."""
@@ -289,6 +335,16 @@ class Settings(BaseSettings):
             bad.append("PADDLE_API_KEY (looks like a SANDBOX key but PADDLE_ENV is 'live')")
         if self.PADDLE_ENV == "sandbox" and "_live_" in key:
             bad.append("PADDLE_API_KEY (looks like a LIVE key but PADDLE_ENV is 'sandbox')")
+        import os
+
+        if os.environ.get("FORWARDED_ALLOW_IPS", "").strip() == "*":
+            bad.append("FORWARDED_ALLOW_IPS (is '*': any client could send its own X-Forwarded-For and bypass the IP rate limits; list your proxy's address instead)")
+        if self.MONITORING_TOKEN and len(self.MONITORING_TOKEN) < 32:
+            bad.append("MONITORING_TOKEN (must be at least 32 characters when set)")
+        if self.ALERT_WEBHOOK_URL and not self.ALERT_WEBHOOK_URL.startswith("https://"):
+            bad.append("ALERT_WEBHOOK_URL (must be an https:// URL)")
+        if self.SENTRY_DSN and not self.SENTRY_DSN.startswith("https://"):
+            bad.append("SENTRY_DSN (must be an https:// URL)")
         for name in (
             "RETELL_API_KEY", "PADDLE_API_KEY", "PADDLE_WEBHOOK_SECRET", "PADDLE_STARTER_PRICE_ID",
             "PADDLE_GROWTH_PRICE_ID", "TOKEN_ENCRYPTION_KEY", "SMTP_HOST",

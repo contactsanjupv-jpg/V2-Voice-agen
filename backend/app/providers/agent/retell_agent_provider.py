@@ -10,6 +10,7 @@ Shapes follow Retell's API reference (create-retell-llm, create-agent,
 update-*). Anything not confirmed against a live account is marked
 UNVERIFIED so the first real run tells us immediately.
 """
+from app.config import get_settings
 from app.providers.agent.agent_provider import AgentConfig, AgentProvider
 from app.providers.retell_client import RetellClient
 
@@ -108,4 +109,7 @@ class RetellAgentProvider(AgentProvider):
         }
         if config.capture_leads:
             payload["post_call_analysis_data"] = LEAD_ANALYSIS_FIELDS
+        days = get_settings().RETELL_DATA_RETENTION_DAYS
+        if days is not None:  # unset: leave whatever the Retell account/agent already has
+            payload["data_storage_retention_days"] = days
         return payload

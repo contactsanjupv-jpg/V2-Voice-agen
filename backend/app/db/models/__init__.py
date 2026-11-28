@@ -19,3 +19,4 @@ from app.db.models.billing import (  # noqa: F401
 )
 from app.db.models.platform import WebhookEvent, WebhookSource, AuditLog, AdminUser  # noqa: F401
 from app.db.models.notifications import OwnerNotification  # noqa: F401
+from app.db.models.retention import DataRetentionRun  # noqa: F401

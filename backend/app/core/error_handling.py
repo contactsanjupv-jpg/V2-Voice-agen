@@ -12,11 +12,14 @@ import uuid
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from app.core.error_tracking import report_exception
+
 logger = logging.getLogger("atla.errors")
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     error_id = str(uuid.uuid4())
+    report_exception(exc)
     logger.exception("Unhandled exception [error_id=%s] on %s %s", error_id, request.method, request.url.path)
     return JSONResponse(
         status_code=500,

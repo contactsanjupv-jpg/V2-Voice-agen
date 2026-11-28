@@ -14,12 +14,15 @@ Slow jobs (voice-catalog sync, Paddle subscription reconciliation) run in their 
 Each job is idempotent, so running two workers is safe (just redundant).
 """
 import logging
+import sys
 import time
+
 
 from app.db.base import SessionLocal
 from app.providers.phone.retell_phone_provider import RetellPhoneProvider
+from app.core.error_tracking import init_error_tracking, report_exception
 from app.services.auto_provisioning import settle_auto_provisioning
-from app.services import daily_analytics, monitoring, notifications, owner_notifications
+from app.services import daily_analytics, monitoring, notifications, owner_notifications, retention
 from app.services.entitlement import enforce_entitlements
 from app.services.phone_provisioning import reconcile_provisioning
 from app.services.topups import reconcile_topups
@@ -52,6 +55,7 @@ def run_once(phone_provider=None) -> dict:
         except Exception:  # noqa: BLE001
             db.rollback()
             logger.exception("Worker job %s failed; the other jobs still run", name)
+            report_exception(sys.exc_info()[1])
             failed.append(name)
             return
         if result is not skipped:
@@ -81,6 +85,7 @@ def run_once(phone_provider=None) -> dict:
     isolated("owner_notifications", "owner_notifications", lambda: owner_notifications.send_due_notifications(db))
     isolated("daily_analytics", "daily_reports", lambda: daily_analytics.report_pass(db) or skipped)
     isolated("notification_prune", "notifications_pruned", lambda: (notifications.prune_pass(db) or skipped))
+    isolated("data_retention", "data_retention", lambda: (retention.prune_pass(db) or skipped))
     try:
         summary["alerts_sent"] = monitoring.sweep(db)
     except Exception:  # noqa: BLE001 - monitoring must never break the worker
@@ -96,7 +101,8 @@ def run_once(phone_provider=None) -> dict:
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     cfg = get_settings()
-    cfg.assert_startup_safe("worker")  # the same guard the API runs: an unsafe production configuration never starts
+    cfg.assert_startup_safe("worker")
+    init_error_tracking("worker")  # the same guard the API runs: an unsafe production configuration never starts
     monitoring.publish_config_fingerprint("worker")
     monitoring.mark_started()  # passes from a previous process stop counting; not "ready" until THIS one completes a pass
     budget = cfg.WORKER_PASS_BUDGET_SECONDS

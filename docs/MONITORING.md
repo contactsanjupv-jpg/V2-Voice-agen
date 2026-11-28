@@ -33,7 +33,7 @@ data or call content. Tests assert the alert webhook URL never appears in logs.
 
 ## Not configured / not verified
 Uptime monitor account, alert webhook, `MONITORING_TOKEN`, worker supervisor and log aggregation are all yours to set up.
-Error-tracking (e.g. Sentry) is not integrated.
+Error tracking: optional Sentry integration (set `SENTRY_DSN`, https only). Off by default. It sends exception type, scrubbed message and stack frames only: no request bodies, cookies, headers, query strings, user records or local variables; emails, phone numbers, bearer-like and long token strings are redacted (`app/core/error_tracking.py`, covered by `tests/test_production_hardening.py`). **Not verified against a real Sentry project** (no DSN here): create a project, set the DSN, trigger a test error in staging, and inspect the event to confirm nothing personal appears. Production logs a warning at start-up when the DSN is unset.
 
 
 ## Worker states (`/health/ready` -> `worker_state`)
